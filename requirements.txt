@@ -1,0 +1,5 @@
+AppOpener
+gTTS
+playsound3
+SpeechRecognition
+PyAudio
