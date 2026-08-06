@@ -10,6 +10,8 @@ def greet_user():
     current_time = int(datetime.datetime.now().strftime("%H"))
     if current_time <= 5:
         bot_speak(f"Good Morning Sir, Abhi Subah ke {current_time} baj rahe hai!")
+    elif current_time < 12:
+        bot_speak(f"Good Morning Sir, Abhi Subah ke {current_time} baj rahe hai!")
     elif current_time == 12:
         bot_speak("Good Afternoon Sir, Abhi Dophar ke 12 baj rahe hai!")
     elif current_time <= 13:
