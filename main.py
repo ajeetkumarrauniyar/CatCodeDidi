@@ -1,13 +1,8 @@
 """Application startup and command routing."""
 
-if __package__:
-    from .commands import handle_close_command, handle_open_command, is_father_query
-    from .personality import greet_user
-    from .speech import bot_speak, voice_input
-else:
-    from commands import handle_close_command, handle_open_command, is_father_query
-    from personality import greet_user
-    from speech import bot_speak, voice_input
+from commands import handle_close_command, handle_open_command, is_father_query
+from personality import greet_user
+from speech import bot_speak, voice_input
 
 
 def main():

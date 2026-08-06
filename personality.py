@@ -2,10 +2,7 @@
 
 import datetime
 
-if __package__:
-    from .speech import bot_speak
-else:
-    from speech import bot_speak
+from speech import bot_speak
 
 
 def greet_user():

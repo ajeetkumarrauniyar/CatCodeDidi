@@ -28,12 +28,14 @@ Speak one of these commands:
 The project deliberately uses a flat root layout:
 
 - `main.py`: starts the assistant, listens, and routes commands.
-- `speech.py`: microphone input, speech recognition, and Hindi text-to-speech.
+- `speech.py`: microphone input, speech recognition, Hindi text-to-speech, and audio playback.
 - `commands.py`: application open/close commands and creator-query detection.
 - `personality.py`: time-based greeting and personality responses.
 - `config.py`: configuration constants.
 - `data.py`: static command data.
 - `utils.py`: reserved generic helpers for later phases.
+
+For Phase 1, modules use straightforward same-folder imports and the assistant is launched with `python main.py`. Generated speech is written to a unique temporary MP3 file and deleted after playback.
 
 The current architecture contains no AI, search, browser, or automation modules beyond opening and closing local applications.
 

@@ -1,13 +1,8 @@
 """Local desktop command handlers."""
 
 from AppOpener import close, open
-
-if __package__:
-    from .data import FATHER_RELATED_QUESTIONS
-    from .speech import bot_speak
-else:
-    from data import FATHER_RELATED_QUESTIONS
-    from speech import bot_speak
+from data import FATHER_RELATED_QUESTIONS
+from speech import bot_speak
 
 
 def handle_open_command(app_name):

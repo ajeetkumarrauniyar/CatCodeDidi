@@ -2,4 +2,3 @@
 
 BOT_NAME = "CatCodeDidi"
 LANGUAGE = "hi"
-VOICE_FILE = "voice.mp3"
