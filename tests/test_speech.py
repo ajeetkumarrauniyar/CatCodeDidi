@@ -1,32 +1,10 @@
 """Speech output tests without network or audio-device side effects."""
 
-import importlib
 import os
-import sys
-import types
 import unittest
 from unittest.mock import MagicMock, patch
 
-
-def install_external_dependency_stubs():
-    playsound = types.ModuleType("playsound3")
-    playsound.playsound = lambda *args, **kwargs: None
-    sys.modules.setdefault("playsound3", playsound)
-
-    recognition = types.ModuleType("speech_recognition")
-    recognition.UnknownValueError = type("UnknownValueError", (Exception,), {})
-    recognition.RequestError = type("RequestError", (Exception,), {})
-    recognition.Recognizer = object
-    recognition.Microphone = object
-    sys.modules.setdefault("speech_recognition", recognition)
-
-    gtts = types.ModuleType("gtts")
-    gtts.gTTS = object
-    sys.modules.setdefault("gtts", gtts)
-
-
-install_external_dependency_stubs()
-speech = importlib.import_module("speech")
+import speech
 
 
 class SpeechTests(unittest.TestCase):

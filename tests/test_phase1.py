@@ -1,37 +1,10 @@
 """Phase 1 command-routing tests without audio or desktop side effects."""
 
-import importlib
-import sys
-import types
 import unittest
 from unittest.mock import patch
 
-
-def install_external_dependency_stubs():
-    app_opener = types.ModuleType("AppOpener")
-    app_opener.open = lambda *args, **kwargs: None
-    app_opener.close = lambda *args, **kwargs: None
-    sys.modules.setdefault("AppOpener", app_opener)
-
-    playsound = types.ModuleType("playsound3")
-    playsound.playsound = lambda *args, **kwargs: None
-    sys.modules.setdefault("playsound3", playsound)
-
-    recognition = types.ModuleType("speech_recognition")
-    recognition.UnknownValueError = type("UnknownValueError", (Exception,), {})
-    recognition.RequestError = type("RequestError", (Exception,), {})
-    recognition.Recognizer = object
-    recognition.Microphone = object
-    sys.modules.setdefault("speech_recognition", recognition)
-
-    gtts = types.ModuleType("gtts")
-    gtts.gTTS = object
-    sys.modules.setdefault("gtts", gtts)
-
-
-install_external_dependency_stubs()
-commands = importlib.import_module("commands")
-main = importlib.import_module("main")
+import commands
+import main
 
 
 class PhaseOneTests(unittest.TestCase):
