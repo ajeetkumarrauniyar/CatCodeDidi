@@ -40,7 +40,7 @@ def voice_input():
         said = ""
         try:
             said = recognizer.recognize_google(audio)
-            print(said)
+            print(f'You: {said}')
         except (sr.UnknownValueError, sr.RequestError):
             bot_speak("Maalik, Phir se boliye mai sun nahi paa rahi hu!")
     return said

@@ -4,6 +4,9 @@ from AppOpener import close as close_application
 from AppOpener import open as open_application
 from data import FATHER_RELATED_QUESTIONS
 from speech import bot_speak
+import pyscreenshot
+import datetime
+
 
 
 def handle_open_command(app_name):
@@ -27,3 +30,8 @@ def handle_close_command(app_name):
 def is_father_query(command):
     """Return whether command is a supported creator query."""
     return command.strip().casefold() in FATHER_RELATED_QUESTIONS
+
+def take_screenshot():
+    image = pyscreenshot.grab()
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    image.save(f"screenshot_{timestamp}.png")

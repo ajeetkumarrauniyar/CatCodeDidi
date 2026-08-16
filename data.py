@@ -9,3 +9,12 @@ FATHER_RELATED_QUESTIONS = (
     "tumhen banaya kisne hai",
     "tumhen banaya",
 )
+
+exit_commands = [
+        "shutdown",
+        "good bye",
+        "good night",
+        "bye",
+        "bye bye",
+        "bye-bye",
+    ]

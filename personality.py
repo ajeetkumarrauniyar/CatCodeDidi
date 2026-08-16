@@ -6,17 +6,16 @@ from speech import bot_speak
 
 
 def greet_user():
-    """Speak the original time-based greeting."""
+    """Speak the correct time-based greeting."""
     current_time = int(datetime.datetime.now().strftime("%H"))
-    if current_time <= 5:
-        bot_speak(f"Good Morning Sir, Abhi Subah ke {current_time} baj rahe hai!")
-    elif current_time < 12:
+
+    if 5 <= current_time < 12:
         bot_speak(f"Good Morning Sir, Abhi Subah ke {current_time} baj rahe hai!")
     elif current_time == 12:
         bot_speak("Good Afternoon Sir, Abhi Dophar ke 12 baj rahe hai!")
-    elif current_time <= 13:
+    elif 13 <= current_time < 17:
         bot_speak(f"Good Afternoon Sir, Abhi Dophar ke {current_time - 12} baj rahe hai!")
-    elif current_time <= 17:
+    elif 17 <= current_time < 21:
         bot_speak(f"Good Evening Sir, Abhi Shaam ke {current_time - 12} baj rahe hai!")
     else:
-        bot_speak(f"Hello Night Owl, Abhi Raat ke {current_time - 12} baj rahe hai !")
+        bot_speak(f"Hello Night Owl, Abhi Raat ke {current_time - 12} baj rahe hai!")
