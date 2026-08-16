@@ -5,3 +5,4 @@ SpeechRecognition
 PyAudio
 google-generativeai
 python-dotenv
+pyscreenshot
