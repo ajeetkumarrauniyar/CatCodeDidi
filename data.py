@@ -17,4 +17,5 @@ exit_commands = [
         "bye",
         "bye bye",
         "bye-bye",
+        "good bye good bye"
     ]
