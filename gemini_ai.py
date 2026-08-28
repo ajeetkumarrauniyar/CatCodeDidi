@@ -30,7 +30,7 @@ generation_config = {
     "response_mime_type": "text/plain",
 }
 
-MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
 _chat_session = None
 

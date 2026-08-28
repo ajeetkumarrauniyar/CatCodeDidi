@@ -5,6 +5,8 @@ caller (console loop or GUI) decides how to present it.
 """
 
 import datetime
+import glob
+import os
 import platform
 import shutil
 import subprocess
@@ -26,11 +28,34 @@ class CommandResult:
     ok: bool = True
 
 
+def _mac_resolve_app(app_name):
+    """Find an installed .app whose name loosely matches app_name."""
+    wanted = app_name.lower().replace(".app", "").strip()
+    roots = ["/Applications", "/System/Applications",
+             os.path.expanduser("~/Applications")]
+    apps = [p for root in roots for p in glob.glob(os.path.join(root, "*.app"))]
+    names = {os.path.basename(p)[:-4]: p for p in apps}
+    for name, path in names.items():
+        if name.lower() == wanted:
+            return path
+    for name, path in names.items():
+        if wanted in name.lower():
+            return path
+    return None
+
+
 def _open_application(app_name):
     """Open an application on the current platform, raising on failure."""
     if _SYSTEM == "Darwin":
-        subprocess.run(["open", "-a", app_name], check=True,
-                       capture_output=True, text=True)
+        try:
+            subprocess.run(["open", "-a", app_name], check=True,
+                           capture_output=True, text=True)
+        except subprocess.CalledProcessError:
+            resolved = _mac_resolve_app(app_name)
+            if not resolved:
+                raise
+            subprocess.run(["open", "-a", resolved], check=True,
+                           capture_output=True, text=True)
     elif _SYSTEM == "Windows":
         from AppOpener import open as open_application
         open_application(app_name, match_closest=True, throw_error=True)
@@ -44,7 +69,9 @@ def _open_application(app_name):
 def _close_application(app_name):
     """Close an application on the current platform, raising on failure."""
     if _SYSTEM == "Darwin":
-        subprocess.run(["osascript", "-e", f'quit app "{app_name}"'], check=True,
+        resolved = _mac_resolve_app(app_name)
+        target = os.path.basename(resolved)[:-4] if resolved else app_name
+        subprocess.run(["osascript", "-e", f'quit app "{target}"'], check=True,
                        capture_output=True, text=True)
     elif _SYSTEM == "Windows":
         from AppOpener import close as close_application
