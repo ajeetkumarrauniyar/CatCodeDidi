@@ -7,4 +7,5 @@ google-generativeai
 python-dotenv
 pyscreenshot
 Pillow
-rich
+
+# The GUI uses Tkinter, which ships with the Python standard library.
