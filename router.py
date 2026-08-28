@@ -13,10 +13,9 @@ from commands import (
     take_screenshot,
 )
 from data import exit_commands
-from gemini_ai import ask_gemini
+from gemini_ai import GeminiError, ask_gemini
 
 FATHER_ANSWER = "Mere Papa Anant Hai!"
-GEMINI_FALLBACK = "Maalik, Mere System mein kuch dikkat aa rahi hai!"
 
 
 @dataclass
@@ -67,7 +66,11 @@ def route(said):
     try:
         result.response_text = ask_gemini(said)
         result.log_lines.append("Gemini response received")
-    except Exception as error:
-        result.response_text = GEMINI_FALLBACK
-        result.log_lines.append(f"Gemini request failed ({error})")
+    except GeminiError as error:
+        # error carries a short, safe, user-facing message (no secrets).
+        result.response_text = str(error)
+        result.log_lines.append(f"Gemini unavailable - {error}")
+    except Exception as error:  # never let an unexpected SDK error escape
+        result.response_text = "Maalik, Gemini se abhi baat nahi ho pa rahi."
+        result.log_lines.append(f"Gemini error ({type(error).__name__})")
     return result

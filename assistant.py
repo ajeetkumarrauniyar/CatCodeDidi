@@ -12,6 +12,7 @@ through the `emit` callback passed to the constructor:
 All methods here block; the caller is expected to run them off the UI thread.
 """
 
+import gemini_ai
 import router
 import speech
 from config import BOT_NAME
@@ -37,6 +38,12 @@ class Assistant:
 
     def startup_greeting(self):
         """Greet the user once when the app launches."""
+        if gemini_ai.is_configured():
+            self._emit("log", f"Gemini ready (model: {gemini_ai.model_name()})")
+            gemini_ai.prewarm()  # load the SDK now, off the UI thread
+        else:
+            self._emit("log", "Gemini API key not set - AI answers off, local "
+                              "commands still work. Add GEMINI_API_KEY to .env")
         text = greeting()
         self._emit("message", (BOT_NAME, text))
         self._speak(text)

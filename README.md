@@ -15,7 +15,8 @@ cross-platform GUI phase.
 - 🗣️ **Hindi text-to-speech** — replies are spoken aloud (gTTS).
 - 🖥️ **Open / close desktop apps** by voice (`open Google Chrome`, `close Google Chrome`).
 - 📸 **Screenshots** — saved to a `screenshots/` folder and reported in the log.
-- 🤖 **Gemini answers** for anything that isn't a built-in command.
+- 🤖 **Gemini answers** for anything that isn't a built-in command, via the
+  official `google-genai` SDK and a fast Flash-Lite model.
 - 🙋 **Creator query** — "who is your father".
 - 👋 **Exit by voice** — `shutdown`, `bye`, `good night`, …
 - 🧵 **Responsive UI** — recognition, Gemini and audio run on a background
@@ -56,7 +57,7 @@ The flow is the same everywhere:
 4. Install the system dependency for your OS (table above)
 5. Create and activate a virtual environment
 6. `pip install -r requirements.txt`
-7. Create a `.env` file (optional, for AI)
+7. `cp .env.example .env` and add your Gemini key (optional, for AI answers)
 8. `python main.py`
 
 ### Windows (PowerShell)
@@ -74,7 +75,11 @@ python -m venv .venv
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 
-# 4. Run
+# 4. Gemini key (optional — skip for local commands only)
+Copy-Item .env.example .env
+notepad .env            # paste your key into GEMINI_API_KEY
+
+# 5. Run
 python main.py
 ```
 
@@ -93,7 +98,11 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 
-# 4. Run
+# 4. Gemini key (optional — skip for local commands only)
+cp .env.example .env
+nano .env               # paste your key into GEMINI_API_KEY
+
+# 5. Run
 python main.py
 ```
 
@@ -120,6 +129,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
+cp .env.example .env    # optional: then add your Gemini key
 python main.py
 ```
 
@@ -130,24 +140,50 @@ python main.py
 
 ## Gemini configuration
 
-AI answers use Google's Gemini API. Without a key, every built-in command still
-works; only free-form questions fall back to an error message.
+AI answers use Google's Gemini API through the official **`google-genai`** SDK
+(the modern `from google import genai` client). Without a key, every built-in
+command still works — CatCodeDidi tells you in the activity log that AI answers
+are off, and only free-form questions show a "key not configured" message.
 
-1. Get a key from <https://aistudio.google.com/apikey>.
-2. Create a file named `.env` in the project folder:
+1. Get a free key from <https://aistudio.google.com/apikey>.
+2. Copy `.env.example` to `.env` and paste your key:
 
-   ```dotenv
-   GEMINI_API_KEY=your_key_here
-   # optional — override the default model:
-   GEMINI_MODEL=gemini-3.6-flash
+   ```bash
+   cp .env.example .env          # Windows PowerShell: Copy-Item .env.example .env
    ```
 
-`.env` is git-ignored. Never commit your key.
+   ```dotenv
+   GEMINI_API_KEY=your_api_key_here
+   # optional — override the default model:
+   GEMINI_MODEL=gemini-3.5-flash-lite
+   ```
+
+`.env` is git-ignored — never commit your key. It is loaded automatically at
+startup and is never printed, logged, or shown in the GUI.
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `GEMINI_API_KEY` | your Gemini API key | *(required for AI)* |
-| `GEMINI_MODEL` | model name passed to the Gemini client | `gemini-3.6-flash` |
+| `GEMINI_API_KEY` | your Gemini API key (required for AI answers) | *(none)* |
+| `GEMINI_MODEL` | model id sent to Gemini | `gemini-3.5-flash-lite` |
+
+### Which model, and why
+
+The default is **`gemini-3.5-flash-lite`** — currently Google's fastest,
+most cost-effective GA model, built for low-latency, high-volume conversational
+use. That matches a voice assistant: many short requests where response speed
+matters more than deep reasoning. Requests use a **low "thinking level"** so
+simple commands ("tell me a joke", "what time is it") are not slowed down by
+unnecessary reasoning.
+
+To trade a little latency for more depth, set another current model, e.g.:
+
+```dotenv
+GEMINI_MODEL=gemini-3.6-flash      # stronger knowledge / coding
+GEMINI_MODEL=gemini-3.7-flash      # most capable Flash
+```
+
+No code changes needed. If you pick an older model that doesn't support the
+thinking setting, CatCodeDidi automatically retries the request without it.
 
 ---
 
@@ -193,7 +229,10 @@ The button is disabled while she is busy, so only one interaction runs at a time
 | "Samajh nahi aaya" every time | Background noise or an online outage — speak clearly and check your connection. |
 | Speech recognition never returns | It now times out after ~8 s of silence and returns to **Ready**. |
 | `take a screenshot` fails on Linux | Install `gnome-screenshot` or `grim` (Wayland). |
-| AI replies say "System mein kuch dikkat" | `GEMINI_API_KEY` missing/invalid, or the model name is wrong — check `.env`. The activity log shows the exact error. |
+| "Gemini API key not configured" | No `GEMINI_API_KEY` in `.env`. Copy `.env.example` to `.env` and add your key. Local commands still work without it. |
+| "Gemini API key galat ya invalid" | The key is wrong, revoked, or has no Gemini access — regenerate it at <https://aistudio.google.com/apikey>. |
+| "Model '…' available nahi hai" | `GEMINI_MODEL` is misspelled or retired. Remove the line to use the default, or set a current model (see [Which model](#which-model-and-why)). |
+| "Gemini abhi busy hai (rate limit)" | Free-tier quota hit — wait a minute and try again. |
 | No sound on Linux | Ensure GStreamer or `ffmpeg` is installed for `playsound3`. |
 
 ---
@@ -208,7 +247,8 @@ router.py       maps recognized text to a response + activity-log lines
 commands.py     cross-platform open/close app, screenshot, creator-query check
 speech.py       microphone capture, Google recognition, Hindi TTS, playback
 personality.py  time-based greeting text
-gemini_ai.py    Gemini client (lazy init; honours GEMINI_API_KEY / GEMINI_MODEL)
+gemini_ai.py    Gemini via the google-genai SDK; one reused client, stateless
+                requests, low thinking level; raises GeminiError with safe messages
 config.py       BOT_NAME, LANGUAGE
 data.py         static command / creator-query data
 utils.py        reserved for later phases
@@ -236,9 +276,11 @@ The GUI holds no assistant logic; `assistant.py` holds no GUI code.
 | Screenshot | `pyscreenshot` | `pyscreenshot` | `pyscreenshot` (X11 native; Wayland needs a helper) |
 | TTS playback | WinMM | `afplay` | GStreamer / `ffmpeg` via `playsound3` |
 | Temp audio file | `tempfile` (created, closed, then written — Windows-safe) | same | same |
+| Gemini API | identical everywhere — `google-genai` over HTTPS, no OS-specific code; `.env` via `python-dotenv` |
 
 **Tested on:** macOS 15 (Apple Silicon), Python 3.13, Tk 9.0 — full interaction
-cycle, all commands, resize, error paths.
+cycle, all commands, resize, error paths, and **live Gemini** calls with a real
+key (`gemini-3.5-flash-lite`, and error paths for invalid key / bad model).
 **Not physically tested:** Windows and Linux. Those code paths are exercised by
 `platform.system()` branches and were reviewed statically; verify with the
 commands above. Application *names* differ across OSes — use the name as it
@@ -249,6 +291,6 @@ appears on your system.
 ## Roadmap
 
 1. **Phase 1 — Refactor & make robust.** ✅
-2. **Phase 2 — Desktop GUI + cross-platform polish.** ✅ *(this phase)*
-3. **Phase 3 — AI:** deepen the modular AI provider.
+2. **Phase 2 — Desktop GUI, cross-platform polish, modern Gemini SDK.** ✅ *(this phase)*
+3. **Phase 3 — AI:** richer conversation, tool use / function calling.
 4. **Phase 4 — Search + AI:** retrieval, summarisation, scoped automation.

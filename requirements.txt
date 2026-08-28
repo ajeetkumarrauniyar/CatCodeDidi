@@ -11,7 +11,7 @@ gTTS                     # Google text-to-speech (online)
 playsound3               # cross-platform audio playback
 
 # AI
-google-generativeai      # Gemini client
+google-genai             # official Gemini SDK (client-based google.genai API)
 python-dotenv            # reads GEMINI_API_KEY / GEMINI_MODEL from .env
 
 # Screenshots
