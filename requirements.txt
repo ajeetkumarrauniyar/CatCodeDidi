@@ -1,11 +1,22 @@
-AppOpener
-gTTS
-playsound3
-SpeechRecognition
-PyAudio
-google-generativeai
-python-dotenv
-pyscreenshot
-Pillow
+# CatCodeDidi Python dependencies.
+# The GUI uses Tkinter, which ships with the Python standard library
+# (on Linux it may be a separate OS package - see README).
 
-# The GUI uses Tkinter, which ships with the Python standard library.
+# Speech input
+SpeechRecognition        # microphone capture + Google Web Speech API
+PyAudio                  # PortAudio bindings; needs PortAudio installed (see README)
+
+# Speech output
+gTTS                     # Google text-to-speech (online)
+playsound3               # cross-platform audio playback
+
+# AI
+google-generativeai      # Gemini client
+python-dotenv            # reads GEMINI_API_KEY / GEMINI_MODEL from .env
+
+# Screenshots
+pyscreenshot
+Pillow                   # image backend used by pyscreenshot
+
+# Opening/closing apps on Windows (unused on macOS/Linux)
+AppOpener; sys_platform == "win32"

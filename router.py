@@ -63,10 +63,11 @@ def route(said):
         return result
 
     # Anything else goes to Gemini.
-    result.log_lines.append(f"AI request: {said}")
+    result.log_lines.append("Sent request to Gemini")
     try:
         result.response_text = ask_gemini(said)
+        result.log_lines.append("Gemini response received")
     except Exception as error:
         result.response_text = GEMINI_FALLBACK
-        result.log_lines.append(f"AI error: {error}")
+        result.log_lines.append(f"Gemini request failed ({error})")
     return result

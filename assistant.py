@@ -49,7 +49,7 @@ class Assistant:
 
         if not heard.ok:
             self._emit("state", STATE_ERROR)
-            self._emit("log", f"Recognition failed: {heard.error}")
+            self._emit("log", f"Speech recognition failed - {heard.error}")
             self._emit("message", (BOT_NAME, heard.error or "Kuch samajh nahi aaya."))
             self._emit("state", STATE_READY)
             return
