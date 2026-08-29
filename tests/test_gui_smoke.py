@@ -54,11 +54,67 @@ def test_gui_end_to_end(monkeypatch, tk_root, gui_pump):
     assert any(c.body.cget("text") == "Enable it in settings." for c in app._cards)
     assert app._state == gui.STATE_READY
 
-    # 4. activity log stays capped
-    for i in range(10):
-        app._add_activity("info", f"row {i}")
-    assert len(app._activity_rows) <= gui.MAX_ACTIVITY_ROWS
+    # 4. the Activity panel is gone, and the dock took its row
+    assert not hasattr(app, "activity")
+    assert not hasattr(app, "_activity_rows")
+    assert app.dock.grid_info()["row"] == 3
+    assert app.controls.winfo_exists()
 
     # 5. clean shutdown
     app._shutdown()
     assert app._alive is False
+
+
+def test_activity_events_are_logged_not_shown(monkeypatch, tk_root, gui_pump, caplog):
+    """Diagnostics must survive the panel removal - they go to the log now."""
+    monkeypatch.setattr(gui.Assistant, "startup_greeting", lambda self: None)
+    app = gui.CatCodeDidiGUI(tk_root)
+    gui_pump(tk_root, 0.3)
+    cards_before = len(app._cards)
+
+    with caplog.at_level("INFO", logger="catcodedidi"):
+        app._handle("activity", ("open", "Opened Google Chrome"))
+        app._handle("activity", ("warn", "Gemini unavailable"))
+
+    assert "Opened Google Chrome" in caplog.text
+    assert "Gemini unavailable" in caplog.text
+    assert any(r.levelname == "WARNING" for r in caplog.records)
+    assert len(app._cards) == cards_before          # nothing added to the window
+    app._shutdown()
+
+
+def test_layout_has_no_dead_space_after_removing_activity(tk_root, monkeypatch, gui_pump):
+    """The reclaimed height must go to the conversation, not become a gap.
+
+    Regression: an empty CTkFrame defaults to 200px, so the reserved controls
+    strip silently left a dead band under the conversation.
+    """
+    monkeypatch.setattr(gui.Assistant, "startup_greeting", lambda self: None)
+    app = gui.CatCodeDidiGUI(tk_root)
+    gui_pump(tk_root, 0.4)
+    tk_root.update()
+
+    weights = {r: tk_root.grid_rowconfigure(r).get("weight") for r in range(4)}
+    assert weights[2] > 0                            # conversation grows
+    assert all(weights[r] == 0 for r in (0, 1, 3))   # header/voice/dock do not
+
+    # The empty controls strip collapses; the dock stays a slim bar.
+    assert app.controls.winfo_height() <= 2
+    assert app.dock.winfo_height() < 120
+
+    conversation = [c for c in tk_root.grid_slaves() if c.grid_info()["row"] == 2][0]
+    assert conversation.winfo_height() > app.dock.winfo_height()
+    app._shutdown()
+
+
+def test_window_resize_keeps_layout_sane(tk_root, monkeypatch, gui_pump):
+    monkeypatch.setattr(gui.Assistant, "startup_greeting", lambda self: None)
+    app = gui.CatCodeDidiGUI(tk_root)
+    gui_pump(tk_root, 0.3)
+
+    for geometry in ("1100x950", "760x700", "900x900"):
+        tk_root.geometry(geometry)
+        gui_pump(tk_root, 0.25)
+        assert app.controls.winfo_height() <= 2      # never re-inflates
+        assert app.dock.winfo_height() < 160
+    app._shutdown()

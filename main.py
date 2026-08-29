@@ -4,6 +4,7 @@ Runs a small preflight check before touching the GUI so that an unsupported
 Python / Tcl-Tk runtime produces a clear message instead of a native crash.
 """
 
+import logging
 import sys
 import textwrap
 import platform
@@ -77,6 +78,14 @@ def _preflight():
 
 def main():
     _preflight()
+    # Diagnostics (apps opened, screenshot paths, Gemini failures) go here
+    # rather than into the window; anything the user must act on is shown
+    # as an error card in the conversation.
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s  %(levelname)-7s %(message)s",
+        datefmt="%H:%M:%S",
+    )
     from gui import main as run_gui
     run_gui()
 

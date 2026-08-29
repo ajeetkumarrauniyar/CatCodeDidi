@@ -7,15 +7,21 @@ Gemini or speaking.
 
 Assistant -> GUI events (all via the queue):
     ("state",      "Ready" | "Listening..." | ... )
-    ("status",     "short caption under the mic")
+    ("status",     "short caption shown in the interaction dock")
     ("transcript", "what the user said")
     ("message",    (speaker, text))
     ("error",      (title, body))
     ("activity",   (kind, text))          kind: open|close|shot|ai|warn|ok|info
     ("exit",       None)
+
+"activity" events are diagnostics (which app opened, where a screenshot went,
+why Gemini failed). They are no longer shown in the window - anything the user
+needs to act on arrives as an "error" card instead - but they are still logged,
+so `python main.py` remains debuggable.
 """
 
 import datetime
+import logging
 import queue
 import threading
 
@@ -24,10 +30,11 @@ import customtkinter as ctk
 import theme
 from assistant import STATE_ERROR, STATE_READY, Assistant
 from config import BOT_NAME
-from widgets import ActivityRow, MessageCard, MicOrb, section_header
+from widgets import MessageCard, MicOrb, section_header
 
 TAGLINE = "Personal voice assistant"
-MAX_ACTIVITY_ROWS = 4
+
+log = logging.getLogger("catcodedidi")
 
 
 def _now():
@@ -54,12 +61,14 @@ class CatCodeDidiGUI:
         root.protocol("WM_DELETE_WINDOW", self._shutdown)
 
         root.grid_columnconfigure(0, weight=1)
-        root.grid_rowconfigure(2, weight=1, minsize=220)
+        # The conversation is the hero and the only row that grows; the header,
+        # voice core and interaction dock keep their natural height.
+        root.grid_rowconfigure(2, weight=1, minsize=240)
 
         self._build_header()
         self._build_voice_core()
         self._build_conversation()
-        self._build_activity()
+        self._build_dock()
 
         root.bind("<space>", self._key_trigger)
         root.bind("<Return>", self._key_trigger)
@@ -118,20 +127,7 @@ class CatCodeDidiGUI:
         self.pill_text.pack(side="left", padx=(0, theme.SPACE_3), pady=theme.SPACE_1)
 
         self.orb = MicOrb(card, on_press=self._trigger)
-        self.orb.grid(row=1, column=0, pady=(theme.SPACE_2, 0))
-
-        self.caption = ctk.CTkLabel(
-            card, text="Tap the mic and speak", height=22,
-            font=ctk.CTkFont(family=theme.ui_family(), size=theme.SIZE_MIC),
-            text_color=theme.TEXT_2,
-        )
-        self.caption.grid(row=2, column=0, pady=(theme.SPACE_1, 0))
-        self.hint = ctk.CTkLabel(
-            card, text="or press Space", height=14,
-            font=ctk.CTkFont(family=theme.ui_family(), size=theme.SIZE_META),
-            text_color=theme.MUTED,
-        )
-        self.hint.grid(row=3, column=0, pady=(0, theme.SPACE_4))
+        self.orb.grid(row=1, column=0, pady=(theme.SPACE_2, theme.SPACE_4))
 
     def _build_conversation(self):
         wrap = ctk.CTkFrame(self.root, fg_color="transparent")
@@ -146,16 +142,42 @@ class CatCodeDidiGUI:
         self.convo.grid_columnconfigure(0, weight=1)
         self.convo.bind("<Configure>", self._on_convo_resize)
 
-    def _build_activity(self):
-        wrap = ctk.CTkFrame(self.root, fg_color="transparent")
-        wrap.grid(row=3, column=0, sticky="ew", padx=self._pad(), pady=(theme.SPACE_2, theme.SPACE_5))
-        wrap.grid_columnconfigure(0, weight=1)
+    def _build_dock(self):
+        """The interaction dock: everything the user acts through.
 
-        section_header(wrap, "Activity").grid(row=0, column=0, sticky="w", pady=(0, theme.SPACE_1))
-        self.activity = ctk.CTkFrame(wrap, corner_radius=theme.RADIUS_MD, fg_color=theme.SURFACE)
-        self.activity.grid(row=1, column=0, sticky="ew")
-        self.activity.grid_columnconfigure(0, weight=1)
-        self._activity_rows = []
+        Today it grounds the layout with the live status line and the keyboard
+        hint. `self.controls` is the row the Voice / Text mode switch, the text
+        field and the mute control drop into next - laid out as a three-column
+        strip (leading | flexible middle | trailing) so those can be added
+        without moving anything else.
+        """
+        dock = ctk.CTkFrame(self.root, corner_radius=theme.RADIUS_LG,
+                            fg_color=theme.SURFACE)
+        dock.grid(row=3, column=0, sticky="ew", padx=self._pad(),
+                  pady=(theme.SPACE_2, theme.SPACE_5))
+        dock.grid_columnconfigure(0, weight=1)
+        self.dock = dock
+
+        self.caption = ctk.CTkLabel(
+            dock, text="Tap the mic and speak", height=22,
+            font=ctk.CTkFont(family=theme.ui_family(), size=theme.SIZE_MIC),
+            text_color=theme.TEXT_2,
+        )
+        self.caption.grid(row=0, column=0, pady=(theme.SPACE_4, 0))
+
+        self.hint = ctk.CTkLabel(
+            dock, text="or press Space", height=14,
+            font=ctk.CTkFont(family=theme.ui_family(), size=theme.SIZE_META),
+            text_color=theme.MUTED,
+        )
+        self.hint.grid(row=1, column=0, pady=(0, theme.SPACE_4))
+
+        # height=0 so an empty strip collapses instead of claiming CTkFrame's
+        # default 200px and leaving a dead band under the conversation; it
+        # grows to fit as soon as controls are added.
+        self.controls = ctk.CTkFrame(dock, fg_color="transparent", height=0)
+        self.controls.grid(row=2, column=0, sticky="ew", padx=theme.SPACE_4)
+        self.controls.grid_columnconfigure(1, weight=1)
 
     # ------------------------------------------------------------- conversation
 
@@ -200,16 +222,6 @@ class CatCodeDidiGUI:
             self.convo._parent_canvas.yview_moveto(1.0)
         except Exception:
             pass
-
-    def _add_activity(self, kind, text):
-        row = ActivityRow(self.activity, kind, text, _now())
-        row.grid(row=len(self._activity_rows), column=0, sticky="ew",
-                 padx=theme.SPACE_3, pady=2)
-        self._activity_rows.append(row)
-        while len(self._activity_rows) > MAX_ACTIVITY_ROWS:
-            self._activity_rows.pop(0).destroy()
-            for i, r in enumerate(self._activity_rows):
-                r.grid_configure(row=i)
 
     # ------------------------------------------------------------------ states
 
@@ -295,10 +307,11 @@ class CatCodeDidiGUI:
             title, body = payload
             self._add_card(BOT_NAME, body, "error", title=title)
         elif event_type == "activity":
+            # Diagnostics only - kept out of the window, kept in the log.
             kind, text = payload
-            self._add_activity(kind, text)
+            log.warning("%s", text) if kind == "warn" else log.info("%s", text)
         elif event_type == "exit":
-            self._add_activity("info", "Shutting down")
+            log.info("Shutting down")
             self.root.after(1100, self._shutdown)
         elif event_type == "_done":
             self.orb.set_enabled(True)

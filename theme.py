@@ -112,7 +112,6 @@ _ASTRAL_OK = None
 # key -> (preferred emoji, BMP fallback)
 _GLYPHS = {
     "cat": ("\U0001F431", "CD"),
-    "camera": ("\U0001F4F7", "▣"),
 }
 
 

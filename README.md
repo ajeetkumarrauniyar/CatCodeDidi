@@ -169,8 +169,8 @@ python main.py
 
 AI answers use Google's Gemini API through the official **`google-genai`** SDK
 (the modern `from google import genai` client). Without a key, every built-in
-command still works — CatCodeDidi tells you in the activity log that AI answers
-are off, and only free-form questions show a "key not configured" message.
+command still works — CatCodeDidi notes in the terminal log that AI answers are
+off, and only free-form questions show a "key not configured" message.
 
 1. Get a free key from <https://aistudio.google.com/apikey>.
 2. Copy `.env.example` to `.env` and paste your key:
@@ -288,8 +288,9 @@ No Accessibility/Automation permission is required — app launch uses `open`.
 ```
 main.py         entry point — preflight runtime check, then launches the GUI
 theme.py        design tokens: colours, spacing, radius, typography  (single source)
-widgets.py      custom widgets: animated MicOrb, MessageCard, ActivityRow
+widgets.py      custom widgets: animated MicOrb, MessageCard
 gui.py          CustomTkinter window (presentation only) + queue/thread plumbing
+                header · voice core · conversation (grows) · interaction dock
 assistant.py    Assistant — runs one listen → understand → act → respond → speak cycle
 router.py       classify() (cheap peek) + route() (executes); returns response + activity
 commands.py     per-OS open/close app, screenshot (permission-aware), creator check

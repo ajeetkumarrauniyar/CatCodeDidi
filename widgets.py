@@ -206,36 +206,3 @@ class MessageCard(ctk.CTkFrame):
     def set_wraplength(self, value):
         for label in self._labels:
             label.configure(wraplength=value)
-
-
-class ActivityRow(ctk.CTkFrame):
-    """A single compact icon + text + time line for the activity panel."""
-
-    # All BMP so they render on every Tk build; "shot" is resolved at runtime
-    # because the camera emoji is above U+FFFF (see theme.glyph).
-    ICONS = {
-        "open": "→", "close": "■",
-        "ai": "✦", "warn": "▲", "ok": "✓", "info": "·",
-    }
-
-    def __init__(self, master, kind, text, timestamp):
-        super().__init__(master, fg_color="transparent", height=22)
-        self.pack_propagate(False)
-        color = theme.ERROR if kind == "warn" else (
-            theme.ACCENT_BRIGHT if kind == "ai" else theme.TEXT_2)
-        icon = theme.glyph(self, "camera") if kind == "shot" else self.ICONS.get(kind, "·")
-        ctk.CTkLabel(
-            self, text=icon, width=14,
-            font=font(theme.SIZE_META),
-            text_color=color,
-        ).pack(side="left")
-        ctk.CTkLabel(
-            self, text=timestamp,
-            font=font(theme.SIZE_META),
-            text_color=theme.MUTED,
-        ).pack(side="right")
-        ctk.CTkLabel(
-            self, text=text, anchor="w", justify="left",
-            font=font(theme.SIZE_META),
-            text_color=theme.TEXT_2,
-        ).pack(side="left", padx=(6, 0), fill="x")

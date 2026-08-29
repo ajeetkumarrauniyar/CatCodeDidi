@@ -178,10 +178,6 @@ def test_tempfile_is_closed_before_writing(monkeypatch):
 def test_every_static_icon_is_bmp():
     """Tcl < 8.6.10 raises TclError on characters above U+FFFF, which would
     abort widget construction on older Linux/Windows Tk builds."""
-    import widgets
-    for kind, icon in widgets.ActivityRow.ICONS.items():
-        for ch in icon:
-            assert ord(ch) <= 0xFFFF, f"{kind} icon {icon!r} is not BMP"
     for state, (_color, glyph, _word) in theme.STATE_META.items():
         for ch in glyph:
             assert ord(ch) <= 0xFFFF, f"{state} glyph {glyph!r} is not BMP"
@@ -189,7 +185,7 @@ def test_every_static_icon_is_bmp():
 
 def test_glyph_falls_back_to_bmp_when_tk_cannot_show_emoji(monkeypatch):
     monkeypatch.setattr(theme, "supports_emoji", lambda widget: False)
-    for key in ("cat", "camera"):
+    for key in theme._GLYPHS:
         for ch in theme.glyph(None, key):
             assert ord(ch) <= 0xFFFF
 
