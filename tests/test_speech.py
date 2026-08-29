@@ -44,7 +44,7 @@ def test_recognize_once_permission_error(monkeypatch):
     monkeypatch.setattr(speech.sr, "Microphone", lambda *a, **k: DeniedMic())
     r = speech.recognize_once()
     assert r.error_title == "Microphone access needed"
-    assert "System Settings" in r.error or "Settings" in r.error
+    assert speech.mic_permission_help() in r.error
 
 
 def test_recognize_once_timeout(monkeypatch):

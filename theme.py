@@ -96,3 +96,39 @@ def ui_family():
 
 def mono_family():
     return _resolve(_MONO_STACK, "TkFixedFont")
+
+
+# --------------------------------------------------------------------------
+# Glyphs
+# --------------------------------------------------------------------------
+# Tcl/Tk before 8.6.10 stores strings as UCS-2 and raises
+#   TclError: character U+1f431 is above the range (U+0000-U+FFFF)
+# for any emoji, which would abort widget construction on older Linux and
+# Windows Tk builds. Probe once, then fall back to Basic-Multilingual-Plane
+# glyphs that render on every Tk. Every other symbol in the UI is already BMP.
+
+_ASTRAL_OK = None
+
+# key -> (preferred emoji, BMP fallback)
+_GLYPHS = {
+    "cat": ("\U0001F431", "CD"),
+    "camera": ("\U0001F4F7", "▣"),
+}
+
+
+def supports_emoji(widget):
+    """Whether this Tk build can hold characters above U+FFFF."""
+    global _ASTRAL_OK
+    if _ASTRAL_OK is None:
+        try:
+            widget.tk.call("string", "length", "\U0001F431")
+            _ASTRAL_OK = True
+        except Exception:
+            _ASTRAL_OK = False
+    return _ASTRAL_OK
+
+
+def glyph(widget, key):
+    """The emoji for `key`, or a BMP stand-in on Tk builds that can't show it."""
+    emoji, fallback = _GLYPHS[key]
+    return emoji if supports_emoji(widget) else fallback

@@ -82,7 +82,9 @@ class CatCodeDidiGUI:
                            fg_color=theme.ACCENT)
         dot.grid(row=0, column=0, rowspan=2)
         dot.grid_propagate(False)
-        ctk.CTkLabel(dot, text="\U0001F431", font=("", 22)).place(relx=0.5, rely=0.5, anchor="center")
+        ctk.CTkLabel(
+            dot, text=theme.glyph(dot, "cat"), font=("", 22),
+        ).place(relx=0.5, rely=0.5, anchor="center")
 
         ctk.CTkLabel(
             bar, text=BOT_NAME,

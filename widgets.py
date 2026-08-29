@@ -125,8 +125,23 @@ class MicOrb(ctk.CTkCanvas):
         fill = _blend(color, "#ffffff", glow) if self._enabled else theme.ELEVATED
         self.create_oval(cx - core_r, cy - core_r, cx + core_r, cy + core_r,
                          fill=fill, outline="")
-        self.create_text(cx, cy, text="\U0001F3A4", font=("", 22),
-                         fill="#ffffff" if self._enabled else theme.MUTED)
+
+        ink = "#ffffff" if self._enabled else theme.MUTED
+        if theme.supports_emoji(self):
+            self.create_text(cx, cy, text="\U0001F3A4", font=("", 22), fill=ink)
+        else:
+            # No microphone glyph exists in the BMP, so draw one instead of
+            # showing a Tk "missing character" box on older Tcl builds.
+            self._draw_mic(cx, cy, ink)
+
+    def _draw_mic(self, cx, cy, color):
+        """A simple vector microphone: capsule head, cradle, stem and base."""
+        w, top, h = 6, cy - 13, 16
+        self.create_oval(cx - w, top, cx + w, top + h, fill=color, outline="")
+        self.create_arc(cx - w - 4, top + h - 9, cx + w + 4, top + h + 7,
+                        start=180, extent=180, style="arc", outline=color, width=2)
+        self.create_line(cx, top + h + 7, cx, top + h + 12, fill=color, width=2)
+        self.create_line(cx - 5, top + h + 12, cx + 5, top + h + 12, fill=color, width=2)
 
     def _ring(self, cx, cy, r, color, width):
         self.create_oval(cx - r, cy - r, cx + r, cy + r, outline=color, width=width)
@@ -196,8 +211,10 @@ class MessageCard(ctk.CTkFrame):
 class ActivityRow(ctk.CTkFrame):
     """A single compact icon + text + time line for the activity panel."""
 
+    # All BMP so they render on every Tk build; "shot" is resolved at runtime
+    # because the camera emoji is above U+FFFF (see theme.glyph).
     ICONS = {
-        "open": "→", "close": "■", "shot": "\U0001F4F7",
+        "open": "→", "close": "■",
         "ai": "✦", "warn": "▲", "ok": "✓", "info": "·",
     }
 
@@ -206,8 +223,9 @@ class ActivityRow(ctk.CTkFrame):
         self.pack_propagate(False)
         color = theme.ERROR if kind == "warn" else (
             theme.ACCENT_BRIGHT if kind == "ai" else theme.TEXT_2)
+        icon = theme.glyph(self, "camera") if kind == "shot" else self.ICONS.get(kind, "·")
         ctk.CTkLabel(
-            self, text=self.ICONS.get(kind, "·"), width=14,
+            self, text=icon, width=14,
             font=font(theme.SIZE_META),
             text_color=color,
         ).pack(side="left")

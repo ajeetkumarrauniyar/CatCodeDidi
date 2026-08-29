@@ -26,9 +26,10 @@ from data import FATHER_RELATED_QUESTIONS
 
 _SYSTEM = platform.system()
 
-# Screenshots go in a predictable folder next to the project so the user always
-# knows where to look; the path is also reported in the activity log.
-SCREENSHOT_DIR = Path.cwd() / "screenshots"
+# Screenshots go beside the project rather than in the current working
+# directory, so they land in the same place no matter where the app was
+# launched from (Explorer, Finder, a launcher, or another folder in a shell).
+SCREENSHOT_DIR = Path(__file__).resolve().parent / "screenshots"
 
 _MAC_APP_DIRS = ("/Applications", "/Applications/Utilities",
                  "/System/Applications", str(Path.home() / "Applications"))
@@ -66,6 +67,19 @@ def _mac_resolve_app(app_name):
     return None
 
 
+def _linux_candidates(app_name):
+    """Plausible Linux binary names for a spoken app name.
+
+    Speech gives us "Google Chrome"; the executable is `google-chrome`, so a
+    literal match never works - try the spoken form and its normalisations.
+    """
+    spoken = app_name.strip()
+    lowered = spoken.lower()
+    return tuple(dict.fromkeys(
+        (spoken, lowered, lowered.replace(" ", "-"), lowered.replace(" ", ""))
+    ))
+
+
 def _open_application(app_name):
     """Open an application on the current platform, raising on failure."""
     if _SYSTEM == "Darwin":
@@ -80,8 +94,9 @@ def _open_application(app_name):
         from AppOpener import open as open_application
         open_application(app_name, match_closest=True, throw_error=True)
     else:
-        candidates = (app_name, app_name.lower(), app_name.lower().replace(" ", "-"))
-        launcher = next((shutil.which(name) for name in candidates if shutil.which(name)), None)
+        launcher = next(
+            (shutil.which(name) for name in _linux_candidates(app_name)
+             if shutil.which(name)), None)
         if not launcher:
             raise RuntimeError(f"No '{app_name}' executable on PATH")
         subprocess.Popen(
@@ -100,8 +115,16 @@ def _close_application(app_name):
         from AppOpener import close as close_application
         close_application(app_name, match_closest=True)
     else:
-        # -i: case-insensitive, match against the process name.
-        _run(["pkill", "-i", app_name])
+        # pkill matches the process NAME, which never contains spaces or
+        # capitals - so try the same normalisations used to launch it.
+        # -i is case-insensitive; a non-zero exit means "nothing matched".
+        for candidate in _linux_candidates(app_name):
+            try:
+                _run(["pkill", "-i", candidate])
+                return
+            except RuntimeError:
+                continue
+        raise RuntimeError(f"No running process matching '{app_name}'")
 
 
 def handle_open_command(app_name):

@@ -25,13 +25,20 @@ from config import LANGUAGE
 LISTEN_TIMEOUT = 8
 PHRASE_TIME_LIMIT = 15
 
-_MIC_PERMISSION_HELP = {
+_MIC_HELP = {
     "Darwin": "Open System Settings → Privacy & Security → Microphone and enable "
               "access for your terminal (or the app you launched CatCodeDidi from).",
     "Windows": "Open Settings → Privacy & security → Microphone and allow desktop "
                "apps to use the microphone.",
-}.get(platform.system(),
-      "Check your system sound settings and that PulseAudio / PipeWire can see an input device.")
+    "Linux": "Check your sound settings and that PulseAudio / PipeWire can see an "
+             "input device.",
+}
+_MIC_HELP_DEFAULT = "Check your system sound settings and that an input device is available."
+
+
+def mic_permission_help(system=None):
+    """Platform-specific advice for a microphone that will not open."""
+    return _MIC_HELP.get(system or platform.system(), _MIC_HELP_DEFAULT)
 
 
 @dataclass
@@ -126,11 +133,11 @@ def recognize_once():
         if _looks_like_permission_error(error):
             return RecognitionResult(
                 error_title="Microphone access needed",
-                error=f"CatCodeDidi can't use the microphone. {_MIC_PERMISSION_HELP}",
+                error=f"CatCodeDidi can't use the microphone. {mic_permission_help()}",
             )
         return RecognitionResult(
             error_title="Microphone unavailable",
-            error=f"The microphone couldn't be opened. {_MIC_PERMISSION_HELP}",
+            error=f"The microphone couldn't be opened. {mic_permission_help()}",
         )
 
     try:

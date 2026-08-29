@@ -319,19 +319,27 @@ main → gui ──queue──► assistant ──► router ─┬─ commands 
 | Area | Windows | macOS | Linux |
 |---|---|---|---|
 | GUI | CustomTkinter on Tk 8.6+ — HiDPI scaling is automatic on all three |
-| Open app | `AppOpener` (Start-menu fuzzy match) | `open -a` + a fallback scan of `/Applications` (`Chrome` → `Google Chrome`) | executable on `PATH`, launched detached |
-| Close app | `AppOpener` | `osascript … quit app` | `pkill -i` |
-| Screenshot | `pyscreenshot` | `pyscreenshot` (+ black-frame check for denied Screen Recording) | `pyscreenshot` (X11 native; Wayland needs a helper) |
+| Emoji | probed at startup; Tk builds that can't show characters above U+FFFF get BMP glyphs and a vector-drawn mic instead |
+| Open app | `AppOpener` (Start-menu fuzzy match) | `open -a` + a fallback scan of `/Applications` (`Chrome` → `Google Chrome`) | `PATH` lookup over the spoken name and its normalisations (`Google Chrome` → `google-chrome`), launched detached |
+| Close app | `AppOpener` | `osascript … quit app` on the resolved bundle name | `pkill -i` over the same normalisations |
+| Screenshot | `pyscreenshot` | `pyscreenshot` + black-frame check for denied Screen Recording | `pyscreenshot` (X11 native; Wayland needs a helper) |
 | TTS playback | WinMM | `afplay` | GStreamer / `ffmpeg` via `playsound3` |
-| Temp audio file | `tempfile` via `pathlib` — created, closed, then written (Windows-safe) | same | same |
+| Temp audio file | `tempfile` via `pathlib` — created, closed, *then* written, because Windows locks open handles |
+| Screenshot folder | `screenshots/` beside the project, not the current working directory |
 | Gemini API | identical everywhere — `google-genai` over HTTPS, no OS-specific code |
 
-**Actually tested:** macOS 26 (Apple Silicon), Homebrew Python 3.13, Tk 9.0 —
+**Actually run:** macOS 26 (Apple Silicon), Homebrew Python 3.13, Tk 9.0 —
 full interaction cycle, every command, live Gemini (`gemini-3.5-flash-lite`),
-error cards (mic permission, invalid key, bad model), window resize, keyboard
-trigger, clean shutdown, and the preflight guard firing on a simulated old Tk.
-**Reviewed but not run:** Windows and Linux — same code paths behind
-`platform.system()` branches; verify with the commands in this README.
+error cards, resize, keyboard trigger, clean shutdown, the preflight guard on a
+simulated old Tk, and the whole UI rendered with emoji support forced off.
+
+**Verified by test, not by running the OS:** the Windows and Linux branches are
+pinned by `tests/test_cross_platform.py`, which mocks `platform.system()` and
+asserts the exact commands issued (`AppOpener` calls on Windows, `PATH` lookup
+and `pkill` normalisations on Linux), plus the path, temp-file and glyph rules
+above. Real Windows/Linux hardware has **not** been used — please report
+anything that differs.
+
 Application *names* differ per OS — say the name as it appears on your system.
 
 ---

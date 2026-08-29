@@ -1,7 +1,6 @@
 """Shared test fixtures. Adds the project root to sys.path so `import router`
 etc. work when pytest is run from anywhere."""
 
-import os
 import sys
 from pathlib import Path
 
