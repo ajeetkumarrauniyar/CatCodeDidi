@@ -6,6 +6,11 @@ Python / Tcl-Tk runtime produces a clear message instead of a native crash.
 
 import sys
 import textwrap
+import platform
+
+# Ensure a valid macOS version tuple is returned
+if platform.system() == "Darwin" and not platform.mac_ver()[0]:
+    platform.mac_ver = lambda: ("14.0.0", ("", "", ""), "arm64")
 
 MIN_PYTHON = (3, 10)
 MIN_TK = (8, 6)
