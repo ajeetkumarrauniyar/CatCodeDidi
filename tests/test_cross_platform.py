@@ -10,7 +10,7 @@ import types
 import pytest
 
 import commands
-import theme
+import gui
 
 
 @pytest.fixture
@@ -178,25 +178,25 @@ def test_tempfile_is_closed_before_writing(monkeypatch):
 def test_every_static_icon_is_bmp():
     """Tcl < 8.6.10 raises TclError on characters above U+FFFF, which would
     abort widget construction on older Linux/Windows Tk builds."""
-    for state, (_color, glyph, _word) in theme.STATE_META.items():
+    for state, (_color, glyph, _word) in gui.STATE_META.items():
         for ch in glyph:
             assert ord(ch) <= 0xFFFF, f"{state} glyph {glyph!r} is not BMP"
 
 
 def test_glyph_falls_back_to_bmp_when_tk_cannot_show_emoji(monkeypatch):
-    monkeypatch.setattr(theme, "supports_emoji", lambda widget: False)
-    for key in theme._GLYPHS:
-        for ch in theme.glyph(None, key):
+    monkeypatch.setattr(gui, "supports_emoji", lambda widget: False)
+    for key in gui._GLYPHS:
+        for ch in gui.glyph(None, key):
             assert ord(ch) <= 0xFFFF
 
 
 def test_glyph_uses_emoji_when_supported(monkeypatch):
-    monkeypatch.setattr(theme, "supports_emoji", lambda widget: True)
-    assert theme.glyph(None, "cat") == "\U0001F431"
+    monkeypatch.setattr(gui, "supports_emoji", lambda widget: True)
+    assert gui.glyph(None, "cat") == "\U0001F431"
 
 
 def test_supports_emoji_returns_false_on_narrow_tcl(monkeypatch):
-    monkeypatch.setattr(theme, "_ASTRAL_OK", None)
+    monkeypatch.setattr(gui, "_ASTRAL_OK", None)
 
     class NarrowTk:
         class tk:
@@ -204,8 +204,8 @@ def test_supports_emoji_returns_false_on_narrow_tcl(monkeypatch):
             def call(*args):
                 raise Exception("character U+1f431 is above the range allowed by Tcl")
 
-    assert theme.supports_emoji(NarrowTk()) is False
-    monkeypatch.setattr(theme, "_ASTRAL_OK", None)
+    assert gui.supports_emoji(NarrowTk()) is False
+    monkeypatch.setattr(gui, "_ASTRAL_OK", None)
 
 
 # --------------------------------------------------- platform neutrality

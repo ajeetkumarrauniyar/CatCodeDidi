@@ -364,11 +364,13 @@ No Accessibility/Automation permission is required — app launch uses `open`.
 ## Project structure
 
 ```
-main.py         entry point — preflight runtime check, then launches the GUI
-theme.py        design tokens: colours, spacing, radius, typography  (single source)
-widgets.py      custom widgets: animated MicOrb, MessageCard
-gui.py          CustomTkinter window (presentation only) + queue/thread plumbing
-                header · voice core · conversation (grows) · interaction dock
+main.py         entry point — macOS platform patch, runtime preflight, launch
+gui.py          THE ENTIRE GUI, one file: design tokens, custom widgets
+                (MicOrb, MuteToggle, MessageCard, Tooltip), the window and
+                every event handler. Holds no assistant logic — it calls the
+                services below. Sections: GUI CONFIGURATION · DESIGN TOKENS ·
+                WIDGET HELPERS · CUSTOM WIDGETS · MAIN APPLICATION CLASS ·
+                APPLICATION ENTRY POINT
 assistant.py    Assistant — runs one listen → understand → act → respond → speak cycle
 router.py       classify() (cheap peek) + route() (executes); returns response + activity
 commands.py     per-OS open/close app, screenshot (permission-aware), creator check
@@ -382,8 +384,8 @@ data.py         static command / creator-query data
 utils.py        reserved for later phases
 ```
 
-Data flow (GUI ↔ core are fully separate — the GUI holds no assistant logic,
-`assistant.py` / services hold no GUI code):
+Data flow. All user-interface code lives in `gui.py`; no service module
+imports it, and there are no import cycles (both verified by the test suite):
 
 ```
 main → gui ──queue──► assistant ──► router ─┬─ commands   (open/close/screenshot)

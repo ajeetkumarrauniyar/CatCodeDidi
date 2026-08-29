@@ -1,20 +1,68 @@
 """CatCodeDidi entry point.
 
-Runs a small preflight check before touching the GUI so that an unsupported
-Python / Tcl-Tk runtime produces a clear message instead of a native crash.
+Does three things and nothing else: apply platform compatibility fixes, check
+that the Python / Tcl-Tk runtime can actually build a window, and hand over to
+the GUI. No interface code lives here - that is all in gui.py.
+
+    main.py  ->  gui.py  ->  assistant / router / commands / speech /
+                             gemini_ai / wakeword / personality / data
+
+The compatibility patch runs at import time, before anything pulls in
+CustomTkinter (which imports darkdetect, which parses the macOS version).
+Importing this module is therefore enough to make the GUI safe to import -
+that is how the test suite does it too.
 """
 
 import logging
+import platform
+import subprocess
 import sys
 import textwrap
-import platform
-
-# Ensure a valid macOS version tuple is returned
-if platform.system() == "Darwin" and not platform.mac_ver()[0]:
-    platform.mac_ver = lambda: ("14.0.0", ("", "", ""), "arm64")
 
 MIN_PYTHON = (3, 10)
 MIN_TK = (8, 6)
+
+
+def _macos_product_version():
+    """Ask macOS for its version, the same way the OS reports it itself."""
+    try:
+        out = subprocess.run(["sw_vers", "-productVersion"],
+                             capture_output=True, text=True, timeout=5)
+        version = out.stdout.strip()
+    except Exception:
+        return None
+    # Must be something int() can parse, or we have not fixed anything.
+    return version if version[:1].isdigit() else None
+
+
+def patch_macos_version():
+    """Guarantee platform.mac_ver() reports a parseable version.
+
+    On some macOS + Python combinations mac_ver() returns ('', ('', '', ''), '').
+    darkdetect - pulled in by CustomTkinter - does int() on the major component
+    and dies with `ValueError: invalid literal for int() with base 10: ''`,
+    which reads as a CustomTkinter import failure rather than a platform quirk.
+
+    The real version comes from `sw_vers`; nothing about the machine is
+    hardcoded, and the architecture is read from platform.machine(). Only if
+    sw_vers is unavailable do we fall back to a generic, parseable value - the
+    goal is a number the parser accepts, not a lie about the OS.
+    """
+    if platform.system() != "Darwin":
+        return False
+    try:
+        if platform.mac_ver()[0]:
+            return False                      # already fine, leave it alone
+    except Exception:
+        pass
+
+    version = _macos_product_version() or "10.16"
+    machine = platform.machine() or ""
+    platform.mac_ver = lambda *_args, **_kwargs: (version, ("", "", ""), machine)
+    return True
+
+
+_PATCHED = patch_macos_version()
 
 
 def _fail(title, lines):
@@ -77,6 +125,7 @@ def _preflight():
 
 
 def main():
+    """Bootstrap, then launch the GUI."""
     _preflight()
     # Diagnostics (apps opened, screenshot paths, Gemini failures) go here
     # rather than into the window; anything the user must act on is shown
@@ -86,7 +135,11 @@ def main():
         format="%(asctime)s  %(levelname)-7s %(message)s",
         datefmt="%H:%M:%S",
     )
-    from gui import main as run_gui
+    if _PATCHED:
+        logging.getLogger("catcodedidi").info(
+            "Applied macOS platform.mac_ver() compatibility patch")
+
+    from gui import main as run_gui       # imported last: pulls in CustomTkinter
     run_gui()
 
 

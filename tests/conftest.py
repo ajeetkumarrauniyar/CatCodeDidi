@@ -10,6 +10,12 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Importing the entry point applies the macOS platform.mac_ver() patch, which
+# must happen before anything pulls in CustomTkinter (via gui).
+import main
+
+assert main is not None      # keep the import: it is the patch, not a symbol
+
 
 @pytest.fixture
 def no_gemini_key(monkeypatch):
