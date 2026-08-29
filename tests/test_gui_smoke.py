@@ -98,9 +98,9 @@ def test_layout_has_no_dead_space_after_removing_activity(tk_root, monkeypatch, 
     assert weights[2] > 0                            # conversation grows
     assert all(weights[r] == 0 for r in (0, 1, 3))   # header/voice/dock do not
 
-    # The empty controls strip collapses; the dock stays a slim bar.
-    assert app.controls.winfo_height() <= 2
-    assert app.dock.winfo_height() < 120
+    # The dock is sized by its contents, never by CTkFrame's 200px default.
+    assert app.controls.winfo_height() < 120
+    assert app.dock.winfo_height() < 220
 
     conversation = [c for c in tk_root.grid_slaves() if c.grid_info()["row"] == 2][0]
     assert conversation.winfo_height() > app.dock.winfo_height()
@@ -115,6 +115,8 @@ def test_window_resize_keeps_layout_sane(tk_root, monkeypatch, gui_pump):
     for geometry in ("1100x950", "760x700", "900x900"):
         tk_root.geometry(geometry)
         gui_pump(tk_root, 0.25)
-        assert app.controls.winfo_height() <= 2      # never re-inflates
-        assert app.dock.winfo_height() < 160
+        conversation = [c for c in tk_root.grid_slaves()
+                        if c.grid_info()["row"] == 2][0]
+        assert app.dock.winfo_height() < 220              # never inflates
+        assert conversation.winfo_height() > app.dock.winfo_height()
     app._shutdown()

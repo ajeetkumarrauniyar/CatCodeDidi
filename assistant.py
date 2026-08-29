@@ -30,12 +30,18 @@ _STATUS_BY_KIND = {
 class Assistant:
     def __init__(self, emit):
         self._emit = emit
+        self.muted = False
 
     # -- helpers ---------------------------------------------------------
 
     def _speak(self, text):
-        """Speak text. The caller has already shown it in the GUI, so a TTS
-        failure is only logged - the response stays visible."""
+        """Speak text, unless muted.
+
+        The caller has already shown the text in the GUI, so a TTS failure is
+        only logged - the response stays visible either way.
+        """
+        if self.muted:
+            return
         self._emit("state", STATE_SPEAKING)
         self._emit("status", "Speaking…")
         try:
@@ -57,8 +63,41 @@ class Assistant:
         self._speak(text)
         self._emit("state", STATE_READY)
 
+    def process_user_input(self, text):
+        """The one pipeline every input method feeds into.
+
+        Voice and text differ only in how the text was captured; from here on
+        they are identical - same classification, same command handlers, same
+        Gemini call, same display, same speech.
+
+            speech ─┐
+                    ├─► process_user_input ─► classify ─► command | Gemini
+            typing ─┘                                        └─► display + speak
+        """
+        text = (text or "").strip()
+        if not text:
+            return
+
+        self._emit("transcript", text)
+        self._emit("state", STATE_PROCESSING)
+
+        kind, target = router.classify(text)
+        self._emit("status", _STATUS_BY_KIND.get(kind, "Working…").format(target=target or ""))
+
+        result = router.route(text)
+        for entry in result.activity:
+            self._emit("activity", entry)
+
+        if result.response_text:
+            self._emit("message", (BOT_NAME, result.response_text))
+            self._speak(result.response_text)
+
+        self._emit("state", STATE_READY)
+        if result.is_exit:
+            self._emit("exit", None)
+
     def run_interaction(self):
-        """Run one listen -> understand -> act -> respond -> speak cycle."""
+        """Voice Mode: listen, then hand the words to the shared pipeline."""
         self._emit("state", STATE_LISTENING)
         self._emit("status", "Listening…")
         heard = speech.recognize_once()
@@ -71,20 +110,8 @@ class Assistant:
             self._emit("state", STATE_READY)
             return
 
-        self._emit("transcript", heard.text)
-        self._emit("state", STATE_PROCESSING)
+        self.process_user_input(heard.text)
 
-        kind, target = router.classify(heard.text)
-        self._emit("status", _STATUS_BY_KIND.get(kind, "Working…").format(target=target or ""))
-
-        result = router.route(heard.text)
-        for kind_text in result.activity:
-            self._emit("activity", kind_text)
-
-        if result.response_text:
-            self._emit("message", (BOT_NAME, result.response_text))
-            self._speak(result.response_text)
-
-        self._emit("state", STATE_READY)
-        if result.is_exit:
-            self._emit("exit", None)
+    def submit_text(self, text):
+        """Text Mode: hand the typed words to the same shared pipeline."""
+        self.process_user_input(text)

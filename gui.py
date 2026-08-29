@@ -34,6 +34,15 @@ from widgets import MessageCard, MicOrb, section_header
 
 TAGLINE = "Personal voice assistant"
 
+MODE_VOICE = "Voice Mode"
+MODE_TEXT = "Text Mode"
+
+# Idle caption + hint per mode, so the dock always says what to do next.
+_MODE_PROMPTS = {
+    MODE_VOICE: ("Tap the mic and speak", "or press Space"),
+    MODE_TEXT: ("Type your message", "press Enter to send"),
+}
+
 log = logging.getLogger("catcodedidi")
 
 
@@ -52,6 +61,7 @@ class CatCodeDidiGUI:
         self._state = STATE_READY
         self._cards = []
         self._resize_job = None
+        self._mode = MODE_VOICE
 
         ctk.set_appearance_mode("dark")
         root.title(BOT_NAME)
@@ -172,12 +182,106 @@ class CatCodeDidiGUI:
         )
         self.hint.grid(row=1, column=0, pady=(0, theme.SPACE_4))
 
-        # height=0 so an empty strip collapses instead of claiming CTkFrame's
-        # default 200px and leaving a dead band under the conversation; it
-        # grows to fit as soon as controls are added.
         self.controls = ctk.CTkFrame(dock, fg_color="transparent", height=0)
-        self.controls.grid(row=2, column=0, sticky="ew", padx=theme.SPACE_4)
-        self.controls.grid_columnconfigure(1, weight=1)
+        self.controls.grid(row=2, column=0, sticky="ew",
+                           padx=theme.SPACE_4, pady=(0, theme.SPACE_4))
+        self.controls.grid_columnconfigure(0, weight=1)
+
+        self._build_mode_switch()
+        self._build_text_input()
+        self._apply_mode()
+
+    def _build_mode_switch(self):
+        """Segmented control: the input method, and nothing else, changes."""
+        self.mode_switch = ctk.CTkSegmentedButton(
+            self.controls, values=[MODE_VOICE, MODE_TEXT],
+            command=self._on_mode_change,
+            font=ctk.CTkFont(family=theme.ui_family(), size=theme.SIZE_LABEL,
+                             weight="bold"),
+            height=34, corner_radius=theme.RADIUS_SM, border_width=2,
+            fg_color=theme.SURFACE_2,
+            selected_color=theme.ACCENT, selected_hover_color=theme.ACCENT_BRIGHT,
+            unselected_color=theme.SURFACE_2, unselected_hover_color=theme.ELEVATED,
+            text_color=theme.TEXT,
+        )
+        self.mode_switch.set(self._mode)
+        self.mode_switch.grid(row=0, column=0, pady=(0, theme.SPACE_3))
+
+    def _build_text_input(self):
+        """The composer, shown only in Text Mode."""
+        self.text_row = ctk.CTkFrame(self.controls, fg_color="transparent")
+        self.text_row.grid(row=1, column=0, sticky="ew")
+        self.text_row.grid_columnconfigure(0, weight=1)
+
+        self.entry = ctk.CTkEntry(
+            self.text_row, placeholder_text="Ask CatCodeDidi anything…",
+            font=ctk.CTkFont(family=theme.ui_family(), size=theme.SIZE_BODY),
+            height=44, corner_radius=theme.RADIUS_MD, border_width=1,
+            fg_color=theme.SURFACE_2, border_color=theme.BORDER,
+            text_color=theme.TEXT, placeholder_text_color=theme.MUTED,
+        )
+        self.entry.grid(row=0, column=0, sticky="ew", padx=(0, theme.SPACE_2))
+        self.entry.bind("<Return>", self._submit_text)
+
+        self.send_button = ctk.CTkButton(
+            self.text_row, text="Send", width=88, height=44,
+            font=ctk.CTkFont(family=theme.ui_family(), size=theme.SIZE_LABEL,
+                             weight="bold"),
+            corner_radius=theme.RADIUS_MD,
+            fg_color=theme.ACCENT, hover_color=theme.ACCENT_BRIGHT,
+            text_color="#ffffff", command=self._submit_text,
+        )
+        self.send_button.grid(row=0, column=1)
+
+    # ------------------------------------------------------------------- modes
+
+    def _on_mode_change(self, value):
+        if value != self._mode:
+            self._mode = value
+            self._apply_mode()
+
+    def _apply_mode(self):
+        """Show the input method for the current mode.
+
+        Widgets are hidden and shown, never destroyed and rebuilt. The mic orb
+        is withdrawn in Text Mode - it is not the input method there, so
+        leaving it would both confuse and steal ~200px from the conversation.
+        The status pill stays in both modes.
+        """
+        if self._mode == MODE_TEXT:
+            self.orb.grid_remove()
+            self.text_row.grid()
+            self.entry.focus_set()
+        else:
+            self.orb.grid()
+            self.text_row.grid_remove()
+        self._sync_controls()
+        if self._state == STATE_READY:
+            self._set_idle_caption()
+
+    def _set_idle_caption(self):
+        caption, hint = _MODE_PROMPTS[self._mode]
+        self.caption.configure(text=caption, text_color=theme.TEXT_2)
+        self.hint.configure(text=hint)
+
+    def _sync_controls(self):
+        """Enable exactly the input that the current mode + busy state allow."""
+        busy = self._busy()
+        voice = self._mode == MODE_VOICE
+        self.orb.set_enabled(voice and not busy)
+        state = "normal" if (not voice and not busy) else "disabled"
+        self.entry.configure(state=state)
+        self.send_button.configure(state=state)
+
+    def _submit_text(self, _event=None):
+        if self._busy() or self._mode != MODE_TEXT:
+            return "break"
+        text = self.entry.get().strip()
+        if not text:
+            return "break"
+        self.entry.delete(0, "end")
+        self._run(lambda: self.assistant.submit_text(text))
+        return "break"
 
     # ------------------------------------------------------------- conversation
 
@@ -232,7 +336,7 @@ class CatCodeDidiGUI:
         self.pill_text.configure(text=word)
         self.orb.set_state(state)
         if state == STATE_READY:
-            self.caption.configure(text="Tap the mic and speak", text_color=theme.TEXT_2)
+            self._set_idle_caption()
         elif state == STATE_ERROR:
             self.caption.configure(text="Something needs your attention", text_color=theme.ERROR)
 
@@ -256,6 +360,8 @@ class CatCodeDidiGUI:
         if self._worker and self._worker.is_alive():
             return
         self.orb.set_enabled(False)
+        self.entry.configure(state="disabled")
+        self.send_button.configure(state="disabled")
 
         def wrapper():
             try:
@@ -276,10 +382,22 @@ class CatCodeDidiGUI:
         return bool(self._worker and self._worker.is_alive())
 
     def _trigger(self):
-        if not self._busy():
+        """Start a voice interaction. Only Voice Mode listens."""
+        if not self._busy() and self._mode == MODE_VOICE:
             self._run(self.assistant.run_interaction)
 
     def _key_trigger(self, _event):
+        """Space / Enter on the window.
+
+        The mode decides, which is what keeps Space from hijacking typing: in
+        Text Mode this never starts the mic, it just puts the caret in the
+        composer (the Entry's own class binding has already inserted the
+        character by the time this runs). In Voice Mode the composer is
+        disabled, so there is nothing to steal a keystroke from.
+        """
+        if self._mode == MODE_TEXT:
+            self.entry.focus_set()
+            return "break"
         self._trigger()
         return "break"
 
@@ -314,7 +432,9 @@ class CatCodeDidiGUI:
             log.info("Shutting down")
             self.root.after(1100, self._shutdown)
         elif event_type == "_done":
-            self.orb.set_enabled(True)
+            self._sync_controls()
+            if self._mode == MODE_TEXT:
+                self.entry.focus_set()
 
     # -------------------------------------------------------------- shutdown
 
