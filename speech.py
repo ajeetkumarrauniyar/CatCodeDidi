@@ -11,6 +11,7 @@ Cross-platform notes:
 import platform
 import re
 import tempfile
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -59,9 +60,38 @@ def clean_for_speech(text):
     return re.sub(r"[*:;/\\|`#]", "", text)
 
 
+# The clip currently playing, so another thread (the UI pressing mute) can cut
+# it short. playsound3 returns a handle with a supported stop(); we do not
+# manage any audio processes ourselves.
+_playing = None
+_playing_lock = threading.Lock()
+
+
 def play_audio(file_path):
-    """Play an audio file through a platform-appropriate backend."""
-    playsound3.playsound(str(file_path))
+    """Play an audio file, blocking until it finishes or is stopped."""
+    global _playing
+    sound = playsound3.playsound(str(file_path), block=False)
+    with _playing_lock:
+        _playing = sound
+    try:
+        sound.wait()
+    finally:
+        with _playing_lock:
+            if _playing is sound:
+                _playing = None
+
+
+def stop_audio():
+    """Cut off whatever is playing. Safe to call from any thread, and a no-op
+    when nothing is playing."""
+    with _playing_lock:
+        sound = _playing
+    if sound is None:
+        return
+    try:
+        sound.stop()
+    except Exception:
+        pass    # already finished, or the backend cannot be interrupted
 
 
 def bot_speak(text):

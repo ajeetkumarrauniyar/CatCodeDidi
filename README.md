@@ -8,8 +8,12 @@ command, and watch her state, your words, her reply, and the actions she takes.
 
 ## Features
 
-- 🎤 **Voice control** — an animated mic core with clear Ready / Listening /
-  Working / Speaking / Error states.
+- 🎤 **Voice Mode / Text Mode** — speak into the animated mic core, or type in
+  the composer. Both feed the *same* pipeline, so commands and AI answers
+  behave identically either way.
+- 🔈 **Mute** — one global toggle in the dock silences spoken replies (and cuts
+  off a sentence already playing). Everything else keeps working: recognition,
+  typing, commands, Gemini, and every card in the conversation.
 - 🗣️ **Hindi text-to-speech** — replies are spoken aloud (gTTS).
 - 🖥️ **Open / close desktop apps** by voice, per-OS (`open Google Chrome`).
 - 📸 **Screenshots** — saved to `screenshots/`; permission problems are explained.
@@ -352,14 +356,17 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-~80 tests covering command routing, per-OS command handlers, speech-error
-paths, the Gemini wrapper (mapping, retries, "never leak the key"),
-time-based greeting, the `main.py` runtime preflight, the assistant event
-sequence, colour/theme helpers, and an end-to-end GUI smoke test.
+~200 tests covering command routing, per-OS command handlers (Windows and
+Linux branches included), speech-error paths, the Gemini wrapper (mapping,
+retries, "never leak the key"), time-based greeting, the `main.py` runtime
+preflight, the assistant event sequence, the shared Voice/Text pipeline, the
+mute control, colour/theme helpers, and end-to-end GUI smoke tests.
 
 - GUI tests are marked `gui` and skip themselves when no Tk display is available.
 - `test_live_gemini.py` is marked `live` and runs only when `GEMINI_API_KEY`
   is set; skip it with `pytest -m "not live"`.
+- One test is marked `audio` and is excluded by default because it plays real
+  sound over the network; run it with `pytest -m audio`.
 
 ---
 

@@ -27,10 +27,11 @@ import threading
 
 import customtkinter as ctk
 
+import speech
 import theme
 from assistant import STATE_ERROR, STATE_READY, Assistant
 from config import BOT_NAME
-from widgets import MessageCard, MicOrb, section_header
+from widgets import MessageCard, MicOrb, MuteToggle, section_header
 
 TAGLINE = "Personal voice assistant"
 
@@ -155,11 +156,10 @@ class CatCodeDidiGUI:
     def _build_dock(self):
         """The interaction dock: everything the user acts through.
 
-        Today it grounds the layout with the live status line and the keyboard
-        hint. `self.controls` is the row the Voice / Text mode switch, the text
-        field and the mute control drop into next - laid out as a three-column
-        strip (leading | flexible middle | trailing) so those can be added
-        without moving anything else.
+        Top to bottom: the live status line, the keyboard hint, then the
+        controls strip - a three-column layout holding the centred Voice /
+        Text mode switch and the trailing mute toggle, with the composer
+        underneath it in Text Mode.
         """
         dock = ctk.CTkFrame(self.root, corner_radius=theme.RADIUS_LG,
                             fg_color=theme.SURFACE)
@@ -185,9 +185,12 @@ class CatCodeDidiGUI:
         self.controls = ctk.CTkFrame(dock, fg_color="transparent", height=0)
         self.controls.grid(row=2, column=0, sticky="ew",
                            padx=theme.SPACE_4, pady=(0, theme.SPACE_4))
+        # leading spacer | centred mode switch | trailing mute
         self.controls.grid_columnconfigure(0, weight=1)
+        self.controls.grid_columnconfigure(2, weight=1)
 
         self._build_mode_switch()
+        self._build_mute_toggle()
         self._build_text_input()
         self._apply_mode()
 
@@ -205,12 +208,20 @@ class CatCodeDidiGUI:
             text_color=theme.TEXT,
         )
         self.mode_switch.set(self._mode)
-        self.mode_switch.grid(row=0, column=0, pady=(0, theme.SPACE_3))
+        self.mode_switch.grid(row=0, column=1, pady=(0, theme.SPACE_3))
+
+    def _build_mute_toggle(self):
+        """One global audio control, present in both modes."""
+        self.mute_button = MuteToggle(
+            self.controls, on_toggle=self._on_mute_toggle,
+            muted=self.assistant.muted,
+        )
+        self.mute_button.grid(row=0, column=2, sticky="e", pady=(0, theme.SPACE_3))
 
     def _build_text_input(self):
         """The composer, shown only in Text Mode."""
         self.text_row = ctk.CTkFrame(self.controls, fg_color="transparent")
-        self.text_row.grid(row=1, column=0, sticky="ew")
+        self.text_row.grid(row=1, column=0, columnspan=3, sticky="ew")
         self.text_row.grid_columnconfigure(0, weight=1)
 
         self.entry = ctk.CTkEntry(
@@ -239,6 +250,20 @@ class CatCodeDidiGUI:
         if value != self._mode:
             self._mode = value
             self._apply_mode()
+
+    def _on_mute_toggle(self, muted):
+        """Flip the one central audio state.
+
+        Only spoken output is affected - recognition, the composer, routing,
+        Gemini and every card in the conversation carry on untouched. Muting
+        while CatCodeDidi is mid-sentence also cuts that clip short, so the
+        control does what the user just asked for rather than only applying
+        from the next response.
+        """
+        self.assistant.muted = muted
+        if muted:
+            speech.stop_audio()
+        log.info("Assistant audio %s", "muted" if muted else "unmuted")
 
     def _apply_mode(self):
         """Show the input method for the current mode.
