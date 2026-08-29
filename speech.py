@@ -12,6 +12,7 @@ import platform
 import re
 import tempfile
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,6 +41,43 @@ _MIC_HELP_DEFAULT = "Check your system sound settings and that an input device i
 def mic_permission_help(system=None):
     """Platform-specific advice for a microphone that will not open."""
     return _MIC_HELP.get(system or platform.system(), _MIC_HELP_DEFAULT)
+
+
+class MicrophoneBusy(RuntimeError):
+    """Raised when something tries to record while another part already is."""
+
+
+class _MicrophoneOwner:
+    """Exactly one component may hold the microphone at a time.
+
+    The wake-word listener and the command listener both record, and two open
+    input streams at once produce silence, garbage or a hard PortAudio error
+    depending on the platform. The design already hands ownership over rather
+    than sharing it; this guard makes a mistake loud instead of mysterious.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._owner = None
+
+    @property
+    def owner(self):
+        return self._owner
+
+    @contextmanager
+    def claim(self, who):
+        if not self._lock.acquire(blocking=False):
+            raise MicrophoneBusy(
+                f"{who} wanted the microphone but {self._owner} is using it")
+        self._owner = who
+        try:
+            yield
+        finally:
+            self._owner = None
+            self._lock.release()
+
+
+microphone = _MicrophoneOwner()
 
 
 @dataclass
@@ -149,11 +187,16 @@ def recognize_once():
 
     recognizer = sr.Recognizer()
     try:
-        with sr.Microphone() as source:
+        with microphone.claim("command listener"), sr.Microphone() as source:
             recognizer.adjust_for_ambient_noise(source, duration=0.4)
             audio = recognizer.listen(
                 source, timeout=LISTEN_TIMEOUT, phrase_time_limit=PHRASE_TIME_LIMIT
             )
+    except MicrophoneBusy:
+        return RecognitionResult(
+            error_title="Microphone busy",
+            error="Something else is using the microphone. Try again in a moment.",
+        )
     except sr.WaitTimeoutError:
         return RecognitionResult(
             error_title="Didn't hear anything",

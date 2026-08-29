@@ -14,6 +14,9 @@ command, and watch her state, your words, her reply, and the actions she takes.
 - 🔈 **Mute** — one global toggle in the dock silences spoken replies (and cuts
   off a sentence already playing). Everything else keeps working: recognition,
   typing, commands, Gemini, and every card in the conversation.
+- 👂 **Wake word** *(optional)* — say **“Didi”**, **“Cat Code”** or
+  **“Cat Code Didi”** to start a command hands-free. Fully offline; see
+  [Wake word](#wake-word-optional).
 - 🗣️ **Hindi text-to-speech** — replies are spoken aloud (gTTS).
 - 🖥️ **Open / close desktop apps** by voice, per-OS (`open Google Chrome`).
 - 📸 **Screenshots** — saved to `screenshots/`; permission problems are explained.
@@ -238,6 +241,50 @@ spoken — so a slow or failed voice playback never hides the answer.
 
 ---
 
+## Wake word (optional)
+
+Hands-free listening is **off by default** and disabled until you install the
+engine — it holds the microphone open and downloads a speech model, so it is
+opt-in rather than something that starts behind your back.
+
+```bash
+pip install -r requirements-wake.txt
+```
+
+Then flip **Wake word** in the dock. The first switch-on downloads a ~40 MB
+model into `~/.cache/vosk`; after that it is entirely offline. Say:
+
+| Phrase | |
+|---|---|
+| “Cat Code Didi” | primary |
+| “Didi” | short form |
+| “Cat Code” | short form |
+
+CatCodeDidi wakes, listens for your command, answers, and goes back to
+waiting for the wake word.
+
+**How it works.** [Vosk](https://alphacephei.com/vosk/) (Apache-2.0) runs a
+*grammar-restricted* recogniser: the decoder is given only the wake phrases
+plus `[unk]`, so it is choosing between four options rather than transcribing
+everything you say. **No audio leaves your machine** for wake detection —
+Gemini and Google Web Speech are used only for a command you actually asked
+for.
+
+Measured on this machine (Apple Silicon, small en-us model): **~3.4 % of one
+CPU core** and ~95 MB RSS while listening, with no false wakes over 20 s of
+ambient room noise.
+
+Notes:
+
+- Wake listening pauses in **Text Mode** (the mic is not the input there) and
+  while a command is being handled, so only one thing ever owns the microphone.
+- **Muting does not stop wake detection** — mute silences CatCodeDidi's voice,
+  it does not close her ears.
+- The manual mic button keeps working exactly as before, with or without the
+  wake word.
+
+---
+
 ## Voice commands
 
 | Say | What happens |
@@ -298,7 +345,9 @@ gui.py          CustomTkinter window (presentation only) + queue/thread plumbing
 assistant.py    Assistant — runs one listen → understand → act → respond → speak cycle
 router.py       classify() (cheap peek) + route() (executes); returns response + activity
 commands.py     per-OS open/close app, screenshot (permission-aware), creator check
-speech.py       mic capture, Google recognition, Hindi TTS, playback — friendly errors
+speech.py       mic capture, Google recognition, Hindi TTS, interruptible
+                playback, and the single-owner microphone guard
+wakeword.py     optional offline wake word (Vosk, grammar-restricted)
 personality.py  time-based greeting text
 gemini_ai.py    google-genai SDK: one reused client, stateless requests, low thinking
 config.py       BOT_NAME, LANGUAGE
@@ -356,17 +405,19 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-~200 tests covering command routing, per-OS command handlers (Windows and
+~225 tests covering command routing, per-OS command handlers (Windows and
 Linux branches included), speech-error paths, the Gemini wrapper (mapping,
 retries, "never leak the key"), time-based greeting, the `main.py` runtime
 preflight, the assistant event sequence, the shared Voice/Text pipeline, the
-mute control, colour/theme helpers, and end-to-end GUI smoke tests.
+mute control, wake-word matching and microphone ownership, colour/theme
+helpers, and end-to-end GUI smoke tests.
 
 - GUI tests are marked `gui` and skip themselves when no Tk display is available.
 - `test_live_gemini.py` is marked `live` and runs only when `GEMINI_API_KEY`
   is set; skip it with `pytest -m "not live"`.
-- One test is marked `audio` and is excluded by default because it plays real
-  sound over the network; run it with `pytest -m audio`.
+- Two tests are marked `audio` and excluded by default because they use real
+  audio (playing a clip, and decoding synthesised speech through Vosk); run
+  them with `pytest -m audio`.
 
 ---
 

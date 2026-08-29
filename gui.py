@@ -29,6 +29,7 @@ import customtkinter as ctk
 
 import speech
 import theme
+import wakeword
 from assistant import STATE_ERROR, STATE_READY, Assistant
 from config import BOT_NAME
 from widgets import MessageCard, MicOrb, MuteToggle, section_header
@@ -63,6 +64,11 @@ class CatCodeDidiGUI:
         self._cards = []
         self._resize_job = None
         self._mode = MODE_VOICE
+        self._wake_enabled = False
+        self.detector = wakeword.WakeWordDetector(
+            on_wake=lambda: self.events.put(("wake", None)),
+            on_status=self._on_wake_status,
+        )
 
         ctk.set_appearance_mode("dark")
         root.title(BOT_NAME)
@@ -189,6 +195,7 @@ class CatCodeDidiGUI:
         self.controls.grid_columnconfigure(0, weight=1)
         self.controls.grid_columnconfigure(2, weight=1)
 
+        self._build_wake_switch()
         self._build_mode_switch()
         self._build_mute_toggle()
         self._build_text_input()
@@ -217,6 +224,22 @@ class CatCodeDidiGUI:
             muted=self.assistant.muted,
         )
         self.mute_button.grid(row=0, column=2, sticky="e", pady=(0, theme.SPACE_3))
+
+    def _build_wake_switch(self):
+        """Hands-free listening. Off by default: it holds the microphone open,
+        and the engine downloads a model the first time it is switched on."""
+        self.wake_switch = ctk.CTkSwitch(
+            self.controls, text="Wake word", command=self._on_wake_switch,
+            font=ctk.CTkFont(family=theme.ui_family(), size=theme.SIZE_META),
+            text_color=theme.TEXT_2, progress_color=theme.ACCENT,
+            fg_color=theme.ELEVATED, button_color=theme.TEXT_2,
+            button_hover_color=theme.TEXT, width=40, height=20,
+            switch_width=38, switch_height=18,
+        )
+        self.wake_switch.deselect()
+        self.wake_switch.grid(row=0, column=0, sticky="w", pady=(0, theme.SPACE_3))
+        if not wakeword.is_available():
+            self.wake_switch.configure(state="disabled", text="Wake word n/a")
 
     def _build_text_input(self):
         """The composer, shown only in Text Mode."""
@@ -251,6 +274,47 @@ class CatCodeDidiGUI:
             self._mode = value
             self._apply_mode()
 
+    # ------------------------------------------------------------- wake word
+
+    def _on_wake_switch(self):
+        """Turn hands-free listening on or off."""
+        if self.wake_switch.get():
+            self.detector.start()
+            self._wake_enabled = True
+        else:
+            self.detector.pause()
+            self._wake_enabled = False
+        if self._state == STATE_READY:
+            self._set_idle_caption()
+
+    def _sync_wake(self):
+        """Hold the wake listener paused unless it may safely own the mic.
+
+        It listens only when enabled, in Voice Mode, and while nothing else is
+        recording - so the wake listener and the command listener can never
+        both hold the microphone.
+        """
+        should_listen = (
+            self._wake_enabled
+            and self._mode == MODE_VOICE
+            and not self._busy()
+        )
+        if should_listen:
+            self.detector.resume()
+        else:
+            self.detector.pause()
+
+    def _on_wake_detected(self):
+        """A wake phrase landed (called on the UI thread via the queue)."""
+        if self._busy() or self._mode != MODE_VOICE:
+            self._sync_wake()
+            return
+        log.info("Wake word accepted - listening for a command")
+        self._run(self.assistant.run_interaction)
+
+    def _on_wake_status(self, message):
+        self.events.put(("wake_status", message))
+
     def _on_mute_toggle(self, muted):
         """Flip the one central audio state.
 
@@ -281,11 +345,14 @@ class CatCodeDidiGUI:
             self.orb.grid()
             self.text_row.grid_remove()
         self._sync_controls()
+        self._sync_wake()
         if self._state == STATE_READY:
             self._set_idle_caption()
 
     def _set_idle_caption(self):
         caption, hint = _MODE_PROMPTS[self._mode]
+        if self._mode == MODE_VOICE and self._wake_enabled:
+            caption, hint = "Say “Didi” to wake me", "or tap the mic"
         self.caption.configure(text=caption, text_color=theme.TEXT_2)
         self.hint.configure(text=hint)
 
@@ -384,6 +451,8 @@ class CatCodeDidiGUI:
     def _run(self, target):
         if self._worker and self._worker.is_alive():
             return
+        # Hand the microphone over before the command listener wants it.
+        self.detector.pause()
         self.orb.set_enabled(False)
         self.entry.configure(state="disabled")
         self.send_button.configure(state="disabled")
@@ -456,8 +525,17 @@ class CatCodeDidiGUI:
         elif event_type == "exit":
             log.info("Shutting down")
             self.root.after(1100, self._shutdown)
+        elif event_type == "wake":
+            self._on_wake_detected()
+        elif event_type == "wake_status":
+            log.info("Wake word: %s", payload)
+            if payload == "ready" and self._state == STATE_READY:
+                self._set_idle_caption()
+            elif payload != "ready":
+                self.caption.configure(text=payload, text_color=theme.TEXT_2)
         elif event_type == "_done":
             self._sync_controls()
+            self._sync_wake()          # hands the mic back to the listener
             if self._mode == MODE_TEXT:
                 self.entry.focus_set()
 
@@ -467,6 +545,7 @@ class CatCodeDidiGUI:
         if not self._alive:
             return
         self._alive = False
+        self.detector.stop()
         try:
             self.root.destroy()
         except Exception:
