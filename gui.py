@@ -65,6 +65,7 @@ class CatCodeDidiGUI:
         self._resize_job = None
         self._mode = MODE_VOICE
         self._wake_enabled = False
+        self._hidden = False
         self.detector = wakeword.WakeWordDetector(
             on_wake=lambda: self.events.put(("wake", None)),
             on_status=self._on_wake_status,
@@ -75,7 +76,7 @@ class CatCodeDidiGUI:
         root.configure(fg_color=theme.BG)
         root.geometry("900x900")
         root.minsize(720, 680)
-        root.protocol("WM_DELETE_WINDOW", self._shutdown)
+        root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         root.grid_columnconfigure(0, weight=1)
         # The conversation is the hero and the only row that grows; the header,
@@ -89,6 +90,8 @@ class CatCodeDidiGUI:
 
         root.bind("<space>", self._key_trigger)
         root.bind("<Return>", self._key_trigger)
+        for shortcut in ("<Command-q>", "<Control-q>"):
+            root.bind(shortcut, lambda _event: self._shutdown())
 
         self._empty_state()
         self._drain_events()
@@ -122,6 +125,18 @@ class CatCodeDidiGUI:
             font=ctk.CTkFont(family=theme.ui_family(), size=theme.SIZE_META),
             text_color=theme.MUTED,
         ).grid(row=1, column=1, sticky="nw", padx=theme.SPACE_3)
+
+        # Quitting must always be one obvious click away, never only a
+        # side effect of the close button.
+        bar.grid_columnconfigure(2, weight=1)
+        self.quit_button = ctk.CTkButton(
+            bar, text="Quit", width=64, height=30,
+            font=ctk.CTkFont(family=theme.ui_family(), size=theme.SIZE_META),
+            corner_radius=theme.RADIUS_SM,
+            fg_color=theme.SURFACE, hover_color=theme.ELEVATED,
+            text_color=theme.TEXT_2, command=self._shutdown,
+        )
+        self.quit_button.grid(row=0, column=3, rowspan=2, sticky="e")
 
     def _build_voice_core(self):
         card = ctk.CTkFrame(self.root, corner_radius=theme.RADIUS_LG, fg_color=theme.SURFACE)
@@ -284,6 +299,7 @@ class CatCodeDidiGUI:
         else:
             self.detector.pause()
             self._wake_enabled = False
+        self._hidden = False
         if self._state == STATE_READY:
             self._set_idle_caption()
 
@@ -305,10 +321,17 @@ class CatCodeDidiGUI:
             self.detector.pause()
 
     def _on_wake_detected(self):
-        """A wake phrase landed (called on the UI thread via the queue)."""
+        """A wake phrase landed.
+
+        Runs on the Tk thread: the detector only puts an event on the queue,
+        which _drain_events picks up, so the window is never touched from the
+        audio thread.
+        """
         if self._busy() or self._mode != MODE_VOICE:
             self._sync_wake()
             return
+        if self._hidden:
+            self.show()
         log.info("Wake word accepted - listening for a command")
         self._run(self.assistant.run_interaction)
 
@@ -435,7 +458,10 @@ class CatCodeDidiGUI:
     def _tick(self):
         if not self._alive:
             return
-        if self._state in theme.ANIMATED_STATES:
+        if self._hidden:
+            # Nothing to draw for a withdrawn window; just idle cheaply.
+            delay = 250
+        elif self._state in theme.ANIMATED_STATES:
             self._phase += 0.033
             self.orb.render(self._phase)
             delay = 33
@@ -539,12 +565,51 @@ class CatCodeDidiGUI:
             if self._mode == MODE_TEXT:
                 self.entry.focus_set()
 
+    # ------------------------------------------------------ hide / show / quit
+
+    def _on_close(self):
+        """The window's close button.
+
+        Hiding to the background is only offered when the wake listener is
+        actually running - with no tray icon (see wakeword/README for why),
+        a hidden window with nothing listening would be unreachable. So when
+        wake detection is off, closing quits, which is what the button
+        normally means.
+        """
+        if self._wake_enabled and self.detector.running:
+            self.hide()
+        else:
+            self._shutdown()
+
+    def hide(self):
+        """Withdraw the window but keep the assistant (and its ears) alive."""
+        if self._hidden or not self._alive:
+            return
+        self._hidden = True
+        self.root.withdraw()
+        self._sync_wake()
+        log.info('CatCodeDidi is hidden - say a wake word to bring her back, '
+                 'or quit from the log with Ctrl-C')
+
+    def show(self):
+        """Bring the window back. Must run on the Tk thread."""
+        if not self._alive:
+            return
+        self._hidden = False
+        self.root.deiconify()
+        self.root.lift()
+        try:
+            self.root.focus_force()
+        except Exception:
+            pass
+
     # -------------------------------------------------------------- shutdown
 
     def _shutdown(self):
         if not self._alive:
             return
         self._alive = False
+        log.info("Quitting - wake word detection stops with the process")
         self.detector.stop()
         try:
             self.root.destroy()

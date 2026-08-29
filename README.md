@@ -261,7 +261,8 @@ model into `~/.cache/vosk`; after that it is entirely offline. Say:
 | “Cat Code” | short form |
 
 CatCodeDidi wakes, listens for your command, answers, and goes back to
-waiting for the wake word.
+waiting for the wake word. If the window is hidden, a wake word brings it
+back first — see [Hiding and quitting](#hiding-and-quitting).
 
 **How it works.** [Vosk](https://alphacephei.com/vosk/) (Apache-2.0) runs a
 *grammar-restricted* recogniser: the decoder is given only the wake phrases
@@ -282,6 +283,32 @@ Notes:
   it does not close her ears.
 - The manual mic button keeps working exactly as before, with or without the
   wake word.
+
+---
+
+## Hiding and quitting
+
+| Action | What happens |
+|---|---|
+| Close button, **wake word on** | The window hides; CatCodeDidi keeps listening in the background |
+| Close button, **wake word off** | CatCodeDidi quits — nothing would be listening, so a hidden window would be unreachable |
+| **Quit** in the header, or <kbd>Cmd/Ctrl</kbd>+<kbd>Q</kbd> | Always quits, whatever else is going on |
+| Say a wake word while hidden | The window comes back and goes straight into listening |
+
+**Wake detection stops when you quit.** It is a thread inside CatCodeDidi, not
+a background service — once the process exits nothing is listening, and
+nothing here pretends otherwise.
+
+While hidden, the window stops repainting entirely; only the wake listener
+keeps working.
+
+**No menu-bar / tray icon**, deliberately. `pystray` is the usual choice, but
+its `run()` must own the main thread — which Tk's `mainloop()` already does —
+and its documented macOS workaround (`run_detached`) requires handing it the
+`NSApplication` of the toolkit you are integrating with, which Tkinter does
+not expose. Making that work would mean reaching into Tk's internals through
+PyObjC and pulling in four extra packages. Hide/restore via the wake word plus
+an always-visible Quit button gives the same control without that risk.
 
 ---
 
@@ -413,11 +440,10 @@ mute control, wake-word matching and microphone ownership, colour/theme
 helpers, and end-to-end GUI smoke tests.
 
 - GUI tests are marked `gui` and skip themselves when no Tk display is available.
-- `test_live_gemini.py` is marked `live` and runs only when `GEMINI_API_KEY`
-  is set; skip it with `pytest -m "not live"`.
-- Two tests are marked `audio` and excluded by default because they use real
-  audio (playing a clip, and decoding synthesised speech through Vosk); run
-  them with `pytest -m audio`.
+- `live` (real Gemini API) and `audio` (real sound, real Vosk decode) are
+  **excluded from the default run** — they depend on external services, and a
+  rate limit or a flaky network should not make `pytest` non-deterministic.
+  Run them deliberately: `pytest -m live`, `pytest -m audio`.
 
 ---
 
