@@ -1,0 +1,5 @@
+# Development / test dependencies (not needed to run CatCodeDidi).
+#   pip install -r requirements-dev.txt
+#   pytest
+-r requirements.txt
+pytest

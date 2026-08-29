@@ -336,6 +336,24 @@ Application *names* differ per OS — say the name as it appears on your system.
 
 ---
 
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+~80 tests covering command routing, per-OS command handlers, speech-error
+paths, the Gemini wrapper (mapping, retries, "never leak the key"),
+time-based greeting, the `main.py` runtime preflight, the assistant event
+sequence, colour/theme helpers, and an end-to-end GUI smoke test.
+
+- GUI tests are marked `gui` and skip themselves when no Tk display is available.
+- `test_live_gemini.py` is marked `live` and runs only when `GEMINI_API_KEY`
+  is set; skip it with `pytest -m "not live"`.
+
+---
+
 ## Roadmap
 
 1. **Phase 1 — Refactor & make robust.** ✅
