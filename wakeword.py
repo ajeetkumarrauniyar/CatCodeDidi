@@ -1,197 +1,99 @@
-"""Local, offline wake-word detection.
+"""Waiting for the user to say a wake word.
 
-Technology
-----------
-Vosk (Apache-2.0) running a *grammar-restricted* recogniser. The decoder is
-given only the wake phrases plus "[unk]", so it is not transcribing arbitrary
-speech - it is deciding which of four things it just heard. Measured on the
-small en-us model: 74-141x realtime, i.e. roughly 1% of one core.
+This is optional. Install it with:
 
-No audio ever leaves the machine. Gemini and the Google Web Speech API are
-used only for a command the user has actually asked for.
+    pip install -r requirements-wake.txt
 
-Why not the alternatives:
-- Streaming the mic to a cloud recogniser: explicitly ruled out, and would
-  mean uploading everything said near the machine.
-- Porcupine: excellent and cheap, but needs an account-bound access key and a
-  per-platform .ppn built in a web console for a custom phrase.
-- openWakeWord: MIT, but ships models for a fixed set of phrases; "Cat Code
-  Didi" would have to be trained, and it pulls in onnxruntime.
-- pocketsphinx: no maintained wheels for current Pythons; builds badly on
-  Apple Silicon.
-
-False positives
----------------
-Grammar mode maps *every* utterance onto the nearest allowed phrase, so
-"what is the weather today" decodes as "[unk] didi". A detection is therefore
-only accepted when the decoded text is exactly a wake phrase - any "[unk]"
-alongside it means the user was saying something else. Measured over the
-three wake phrases and six negatives, this accepts all three and rejects all
-six.
-
-Microphone ownership
---------------------
-The listener holds the mic only while actually listening. On a detection it
-releases it *before* announcing the wake, so the command listener can take
-over; the caller resumes it when the command is finished. One long-lived
-thread, parked on an Event while paused - never a busy loop, never respawned.
+We use Vosk, which understands speech *offline* - nothing is uploaded to
+the internet. We also give it a short list of the only phrases it is
+allowed to hear, which makes it fast and accurate.
 """
 
 import json
-import logging
-import threading
 
-import speech
+import pyaudio
 
-log = logging.getLogger("catcodedidi")
+# Vosk is optional. If it is not installed the assistant still works fine,
+# it just cannot listen for a wake word.
+try:
+    import vosk
+    VOSK_INSTALLED = True
+except ImportError:
+    VOSK_INSTALLED = False
 
-WAKE_PHRASES = ("cat code didi", "cat code", "didi")
+WAKE_WORDS = ["cat code didi", "cat code", "didi"]
 
-SAMPLE_RATE = 16000
-BLOCK_FRAMES = 4000          # 0.25s per read - responsive without spinning
+SAMPLE_RATE = 16000       # how many sound measurements per second
+CHUNK_SIZE = 4000         # how much audio we read at a time
 
-
-def is_available():
-    """True when the wake-word engine can be imported."""
-    import importlib.util
-    try:
-        return importlib.util.find_spec("vosk") is not None
-    except Exception:
-        return False
+# We load the speech model once and keep it, because loading is slow.
+model = None
 
 
-class WakeWordDetector:
-    """Listens for a wake phrase and calls `on_wake` exactly once per hit.
+def is_wake_word_ready():
+    """Return True if the optional Vosk library is installed."""
+    return VOSK_INSTALLED
 
-    Lifecycle: start() -> (listening) -> wake -> paused -> resume() -> ...
-    stop() ends the thread. All methods are safe to call from the UI thread;
-    nothing here blocks it.
+
+def load_model():
+    """Load the Vosk speech model, downloading it the first time."""
+    global model
+
+    if model is None:
+        vosk.SetLogLevel(-1)          # hide Vosk's very chatty log messages
+        print("Getting the wake word ready (this takes a moment)...")
+        model = vosk.Model(lang="en-us")
+
+    return model
+
+
+def heard_a_wake_word(spoken_text):
+    """Return True only if the text is exactly one of our wake words.
+
+    Vosk always picks the closest phrase from our list, so "what is the
+    weather today" comes back as "[unk] didi". If we just checked whether
+    "didi" was somewhere in the text, the assistant would wake up by
+    mistake. Checking for an exact match avoids that.
     """
+    return spoken_text.strip().lower() in WAKE_WORDS
 
-    def __init__(self, on_wake, on_status=None, phrases=WAKE_PHRASES):
-        self._on_wake = on_wake
-        self._on_status = on_status or (lambda message: None)
-        self._phrases = {p.lower() for p in phrases}
-        self._thread = None
-        self._stop = threading.Event()
-        self._active = threading.Event()      # set == should be listening
 
-    # -- control -------------------------------------------------------
+def wait_for_wake_word():
+    """Listen until the user says a wake word, then return True.
 
-    @property
-    def listening(self):
-        return self._active.is_set() and not self._stop.is_set()
+    This blocks (waits) until it hears something, which is fine because
+    our program has nothing else to do until then.
+    """
+    speech_model = load_model()
 
-    @property
-    def running(self):
-        return bool(self._thread and self._thread.is_alive())
+    # Tell Vosk the only phrases it is allowed to recognise. "[unk]" means
+    # "something else", which is how we detect that it was not a wake word.
+    allowed_phrases = json.dumps(WAKE_WORDS + ["[unk]"])
+    recognizer = vosk.KaldiRecognizer(speech_model, SAMPLE_RATE, allowed_phrases)
 
-    def start(self):
-        """Begin listening. Loading the model happens on the worker thread, so
-        the first call returns immediately even though it may download."""
-        if self.running:
-            self._active.set()
-            return
-        self._stop.clear()
-        self._active.set()
-        self._thread = threading.Thread(target=self._run, daemon=True,
-                                        name="wake-word")
-        self._thread.start()
+    microphone = pyaudio.PyAudio()
+    stream = microphone.open(
+        format=pyaudio.paInt16,
+        channels=1,
+        rate=SAMPLE_RATE,
+        input=True,
+        frames_per_buffer=CHUNK_SIZE,
+    )
 
-    def pause(self):
-        """Stop listening and release the microphone; keep the thread warm."""
-        self._active.clear()
+    print('\nSay "Didi" to wake me up...')
 
-    def resume(self):
-        if self.running:
-            self._active.set()
-        else:
-            self.start()
+    try:
+        while True:
+            audio_chunk = stream.read(CHUNK_SIZE, exception_on_overflow=False)
 
-    def stop(self):
-        self._stop.set()
-        self._active.clear()
-
-    # -- worker --------------------------------------------------------
-
-    def _load(self):
-        import vosk
-        vosk.SetLogLevel(-1)
-        self._on_status("Preparing wake word…")
-        model = vosk.Model(lang="en-us")      # cached in ~/.cache/vosk
-        grammar = json.dumps(sorted(self._phrases) + ["[unk]"])
-        return vosk, model, grammar
-
-    def _recognizer(self, vosk, model, grammar):
-        return vosk.KaldiRecognizer(model, SAMPLE_RATE, grammar)
-
-    def _run(self):
-        try:
-            vosk, model, grammar = self._load()
-        except Exception as error:
-            log.warning("Wake word unavailable (%s)", type(error).__name__)
-            self._on_status(f"Wake word unavailable ({type(error).__name__})")
-            self._active.clear()
-            return
-
-        self._on_status("ready")
-        while not self._stop.is_set():
-            # Parks the thread while paused - no polling, no CPU.
-            if not self._active.wait(timeout=0.25):
-                continue
-            try:
-                self._listen_once(vosk, model, grammar)
-            except speech.MicrophoneBusy:
-                # Someone else legitimately has the mic; wait and retry.
-                self._stop.wait(0.5)
-            except Exception as error:
-                log.warning("Wake listener stopped (%s)", type(error).__name__)
-                self._on_status(f"Wake word stopped ({type(error).__name__})")
-                self._active.clear()
-
-    def _listen_once(self, vosk, model, grammar):
-        """Hold the mic and decode until a wake phrase lands or we are paused."""
-        import pyaudio
-
-        recognizer = self._recognizer(vosk, model, grammar)
-        audio = pyaudio.PyAudio()
-        detected = False
-        with speech.microphone.claim("wake listener"):
-            stream = None
-            try:
-                stream = audio.open(format=pyaudio.paInt16, channels=1,
-                                    rate=SAMPLE_RATE, input=True,
-                                    frames_per_buffer=BLOCK_FRAMES)
-                while self._active.is_set() and not self._stop.is_set():
-                    data = stream.read(BLOCK_FRAMES, exception_on_overflow=False)
-                    if not recognizer.AcceptWaveform(data):
-                        continue
-                    if self._is_wake(json.loads(recognizer.Result())):
-                        # Release the mic before telling anyone, so the command
-                        # listener never races us for it.
-                        detected = True
-                        self._active.clear()
-                        break
-            finally:
-                if stream is not None:
-                    stream.stop_stream()
-                    stream.close()
-                audio.terminate()
-
-        # Only a real detection wakes the assistant - a pause() must not.
-        if detected and not self._stop.is_set():
-            self._fire()
-
-    def _is_wake(self, result):
-        """Accept only an exact wake phrase - see the false-positive note."""
-        text = (result.get("text") or "").strip().lower()
-        if text in self._phrases:
-            log.info("Wake word detected: %r", text)
-            return True
-        return False
-
-    def _fire(self):
-        try:
-            self._on_wake()
-        except Exception as error:
-            log.warning("Wake callback failed (%s)", type(error).__name__)
+            # AcceptWaveform returns True once it has heard a full phrase.
+            if recognizer.AcceptWaveform(audio_chunk):
+                result = json.loads(recognizer.Result())
+                if heard_a_wake_word(result.get("text", "")):
+                    return True
+    finally:
+        # Always release the microphone, even if something goes wrong,
+        # so we can use it again to listen to the actual command.
+        stream.stop_stream()
+        stream.close()
+        microphone.terminate()

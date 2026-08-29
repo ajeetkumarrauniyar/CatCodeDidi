@@ -1,20 +1,15 @@
-"""Speech input and output for the voice assistant.
+"""Listening to the user and speaking back.
 
-Cross-platform notes:
-- Microphone capture goes through SpeechRecognition + PyAudio (PortAudio).
-- Recognition uses Google's free web API, so it needs an internet connection.
-- Text-to-speech uses gTTS (also online) and playsound3 for playback, which
-  picks a working audio backend on Windows (WinMM), macOS (afplay) and
-  Linux (GStreamer / ffmpeg).
+We use three libraries here:
+  - speech_recognition : records the microphone and turns speech into text
+  - gTTS               : turns text into an MP3 file (Google Text-to-Speech)
+  - playsound3         : plays that MP3 file
 """
 
+import os
 import platform
 import re
 import tempfile
-import threading
-from contextlib import contextmanager
-from dataclasses import dataclass
-from pathlib import Path
 
 import playsound3
 import speech_recognition as sr
@@ -22,217 +17,97 @@ from gtts import gTTS
 
 from config import LANGUAGE
 
-# Give the user a moment to start talking, and cap a single utterance so a
-# silent room can never block the GUI worker forever.
+# Stop listening after 8 seconds of silence, and never record a single
+# sentence for longer than 15 seconds.
 LISTEN_TIMEOUT = 8
-PHRASE_TIME_LIMIT = 15
+MAX_SENTENCE_SECONDS = 15
 
-_MIC_HELP = {
-    "Darwin": "Open System Settings → Privacy & Security → Microphone and enable "
-              "access for your terminal (or the app you launched CatCodeDidi from).",
-    "Windows": "Open Settings → Privacy & security → Microphone and allow desktop "
-               "apps to use the microphone.",
-    "Linux": "Check your sound settings and that PulseAudio / PipeWire can see an "
-             "input device.",
-}
-_MIC_HELP_DEFAULT = "Check your system sound settings and that an input device is available."
+# When this is True, CatCodeDidi still answers but stays quiet.
+# The user turns it on and off by saying "mute" or "unmute".
+muted = False
 
 
-def mic_permission_help(system=None):
-    """Platform-specific advice for a microphone that will not open."""
-    return _MIC_HELP.get(system or platform.system(), _MIC_HELP_DEFAULT)
-
-
-class MicrophoneBusy(RuntimeError):
-    """Raised when something tries to record while another part already is."""
-
-
-class _MicrophoneOwner:
-    """Exactly one component may hold the microphone at a time.
-
-    The wake-word listener and the command listener both record, and two open
-    input streams at once produce silence, garbage or a hard PortAudio error
-    depending on the platform. The design already hands ownership over rather
-    than sharing it; this guard makes a mistake loud instead of mysterious.
-    """
-
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._owner = None
-
-    @property
-    def owner(self):
-        return self._owner
-
-    @contextmanager
-    def claim(self, who):
-        if not self._lock.acquire(blocking=False):
-            raise MicrophoneBusy(
-                f"{who} wanted the microphone but {self._owner} is using it")
-        self._owner = who
-        try:
-            yield
-        finally:
-            self._owner = None
-            self._lock.release()
-
-
-microphone = _MicrophoneOwner()
-
-
-@dataclass
-class RecognitionResult:
-    """Outcome of a single microphone listen + recognition attempt."""
-
-    text: str = ""
-    error: str = ""
-    error_title: str = ""
-
-    @property
-    def ok(self):
-        return bool(self.text) and not self.error
+def set_muted(should_be_muted):
+    """Turn the voice off (True) or back on (False)."""
+    global muted
+    muted = should_be_muted
 
 
 def clean_for_speech(text):
-    """Strip Markdown punctuation that sounds wrong when read aloud."""
+    """Remove symbols that sound strange when read out loud.
+
+    Gemini often replies with Markdown like **bold**, and we do not want
+    CatCodeDidi to say "star star bold star star".
+    """
     return re.sub(r"[*:;/\\|`#]", "", text)
 
 
-# The clip currently playing, so another thread (the UI pressing mute) can cut
-# it short. playsound3 returns a handle with a supported stop(); we do not
-# manage any audio processes ourselves.
-_playing = None
-_playing_lock = threading.Lock()
-
-
-def play_audio(file_path):
-    """Play an audio file, blocking until it finishes or is stopped."""
-    global _playing
-    sound = playsound3.playsound(str(file_path), block=False)
-    with _playing_lock:
-        _playing = sound
-    try:
-        sound.wait()
-    finally:
-        with _playing_lock:
-            if _playing is sound:
-                _playing = None
-
-
-def stop_audio():
-    """Cut off whatever is playing. Safe to call from any thread, and a no-op
-    when nothing is playing."""
-    with _playing_lock:
-        sound = _playing
-    if sound is None:
-        return
-    try:
-        sound.stop()
-    except Exception:
-        pass    # already finished, or the backend cannot be interrupted
-
-
-def bot_speak(text):
-    """Convert text to Hindi speech and play it.
-
-    The temporary MP3 is created with a real filename and closed before gTTS
-    writes to it (Windows keeps a lock on open handles), then removed once
-    playback finishes or fails.
-    """
-    text = (text or "").strip()
-    if not text:
+def speak(text):
+    """Say the text out loud in Hindi."""
+    if muted or not text.strip():
         return
 
-    temp_path = None
-    try:
-        handle = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-        temp_path = Path(handle.name)
-        handle.close()
+    # gTTS needs a real file to write to, so we make a temporary one.
+    # We close it first because Windows will not let two programs write
+    # to the same open file.
+    temp_file = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+    mp3_path = temp_file.name
+    temp_file.close()
 
-        gTTS(text=text, lang=LANGUAGE).save(str(temp_path))
-        play_audio(temp_path)
+    try:
+        gTTS(text=text, lang=LANGUAGE).save(mp3_path)
+        playsound3.playsound(mp3_path)
+    except Exception as error:
+        print(f"Could not speak: {error}")
     finally:
-        if temp_path and temp_path.exists():
-            try:
-                temp_path.unlink()
-            except OSError:
-                pass
+        if os.path.exists(mp3_path):
+            os.remove(mp3_path)
 
 
-def _has_microphone():
-    try:
-        return bool(sr.Microphone.list_microphone_names())
-    except Exception:
-        # If we cannot even enumerate devices, let the real listen() attempt
-        # surface the specific error.
-        return True
+def microphone_help():
+    """Tell the user where to switch the microphone permission on."""
+    system = platform.system()
+
+    if system == "Darwin":          # Darwin is the name macOS reports
+        return "Open System Settings > Privacy & Security > Microphone."
+    elif system == "Windows":
+        return "Open Settings > Privacy & security > Microphone."
+    else:
+        return "Check your sound settings and that a microphone is plugged in."
 
 
-def _looks_like_permission_error(error):
-    text = str(error).lower()
-    return any(s in text for s in ("permission", "denied", "-9986", "access", "not authorized"))
+def listen_to_user():
+    """Record one sentence and return it as text.
 
-
-def recognize_once():
-    """Listen through the microphone once and return a RecognitionResult.
-
-    Never speaks and never raises: every failure mode becomes a friendly
-    (title, message) pair the GUI can present.
+    Returns an empty string if we could not understand anything. The reason
+    is printed so the user knows what went wrong.
     """
-    if not _has_microphone():
-        return RecognitionResult(
-            error_title="No microphone found",
-            error="CatCodeDidi couldn't find an input device. Connect a microphone and try again.",
-        )
-
     recognizer = sr.Recognizer()
+
     try:
-        with microphone.claim("command listener"), sr.Microphone() as source:
-            recognizer.adjust_for_ambient_noise(source, duration=0.4)
+        with sr.Microphone() as microphone:
+            print("\nListening...")
+            recognizer.adjust_for_ambient_noise(microphone, duration=0.4)
             audio = recognizer.listen(
-                source, timeout=LISTEN_TIMEOUT, phrase_time_limit=PHRASE_TIME_LIMIT
+                microphone,
+                timeout=LISTEN_TIMEOUT,
+                phrase_time_limit=MAX_SENTENCE_SECONDS,
             )
-    except MicrophoneBusy:
-        return RecognitionResult(
-            error_title="Microphone busy",
-            error="Something else is using the microphone. Try again in a moment.",
-        )
     except sr.WaitTimeoutError:
-        return RecognitionResult(
-            error_title="Didn't hear anything",
-            error="No speech was picked up. Tap the mic and speak clearly.",
-        )
-    except Exception as error:  # OSError / PortAudio / permission errors vary
-        if _looks_like_permission_error(error):
-            return RecognitionResult(
-                error_title="Microphone access needed",
-                error=f"CatCodeDidi can't use the microphone. {mic_permission_help()}",
-            )
-        return RecognitionResult(
-            error_title="Microphone unavailable",
-            error=f"The microphone couldn't be opened. {mic_permission_help()}",
-        )
+        print("I did not hear anything. Please try again.")
+        return ""
+    except Exception as error:
+        print(f"I cannot use the microphone. {microphone_help()}")
+        print(f"Details: {error}")
+        return ""
 
+    # The audio is sent to Google's free speech service, so this step
+    # needs an internet connection.
     try:
-        return RecognitionResult(text=recognizer.recognize_google(audio))
+        return recognizer.recognize_google(audio)
     except sr.UnknownValueError:
-        return RecognitionResult(
-            error_title="Didn't catch that",
-            error="CatCodeDidi couldn't make out the words. Try again in a quieter spot.",
-        )
+        print("Sorry, I could not understand that.")
+        return ""
     except sr.RequestError:
-        return RecognitionResult(
-            error_title="Speech service unreachable",
-            error="Couldn't reach the speech-recognition service. Check your internet connection.",
-        )
-
-
-def voice_input():
-    """Listen once and return the recognized text (console flow)."""
-    print("\n Listening...")
-    result = recognize_once()
-    if result.ok:
-        print(f"You: {result.text}")
-        return result.text
-    bot_speak("Maalik, Phir se boliye mai sun nahi paa rahi hu!")
-    return ""
+        print("I could not reach the speech service. Check your internet.")
+        return ""
