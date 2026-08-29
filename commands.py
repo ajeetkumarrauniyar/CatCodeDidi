@@ -1,61 +1,23 @@
-"""Local desktop command handlers.
-
-Handlers do not speak or touch any UI. Each returns a CommandResult so the
-caller (console loop or GUI) decides how to present it.
-"""
+"""Local desktop command handlers."""
 
 import datetime
-import glob
-import os
 import platform
 import shutil
 import subprocess
-from dataclasses import dataclass
 
 import pyscreenshot
 
 from data import FATHER_RELATED_QUESTIONS
+from speech import bot_speak
 
 _SYSTEM = platform.system()
-
-
-@dataclass
-class CommandResult:
-    """What a command did: text to speak/show, and an activity-log line."""
-
-    speech: str
-    log: str
-    ok: bool = True
-
-
-def _mac_resolve_app(app_name):
-    """Find an installed .app whose name loosely matches app_name."""
-    wanted = app_name.lower().replace(".app", "").strip()
-    roots = ["/Applications", "/System/Applications",
-             os.path.expanduser("~/Applications")]
-    apps = [p for root in roots for p in glob.glob(os.path.join(root, "*.app"))]
-    names = {os.path.basename(p)[:-4]: p for p in apps}
-    for name, path in names.items():
-        if name.lower() == wanted:
-            return path
-    for name, path in names.items():
-        if wanted in name.lower():
-            return path
-    return None
 
 
 def _open_application(app_name):
     """Open an application on the current platform, raising on failure."""
     if _SYSTEM == "Darwin":
-        try:
-            subprocess.run(["open", "-a", app_name], check=True,
-                           capture_output=True, text=True)
-        except subprocess.CalledProcessError:
-            resolved = _mac_resolve_app(app_name)
-            if not resolved:
-                raise
-            subprocess.run(["open", "-a", resolved], check=True,
-                           capture_output=True, text=True)
+        subprocess.run(["open", "-a", app_name], check=True,
+                       capture_output=True, text=True)
     elif _SYSTEM == "Windows":
         from AppOpener import open as open_application
         open_application(app_name, match_closest=True, throw_error=True)
@@ -69,9 +31,7 @@ def _open_application(app_name):
 def _close_application(app_name):
     """Close an application on the current platform, raising on failure."""
     if _SYSTEM == "Darwin":
-        resolved = _mac_resolve_app(app_name)
-        target = os.path.basename(resolved)[:-4] if resolved else app_name
-        subprocess.run(["osascript", "-e", f'quit app "{target}"'], check=True,
+        subprocess.run(["osascript", "-e", f'quit app "{app_name}"'], check=True,
                        capture_output=True, text=True)
     elif _SYSTEM == "Windows":
         from AppOpener import close as close_application
@@ -84,32 +44,18 @@ def handle_open_command(app_name):
     """Open an application and report the outcome."""
     try:
         _open_application(app_name)
-        return CommandResult(
-            speech=f"Thik hai Maalik! , Mai {app_name} ko open kar deti hu",
-            log=f"Application opened: {app_name}",
-        )
+        bot_speak(f"Thik hai Maalik! , Mai {app_name} ko open kar deti hu")
     except Exception:
-        return CommandResult(
-            speech=f"Maalik, {app_name} naam ka koi software hai hi nahi system mai!",
-            log=f"Open failed: {app_name}",
-            ok=False,
-        )
+        bot_speak(f"Maalik, {app_name} naam ka koi software hai hi nahi system mai!")
 
 
 def handle_close_command(app_name):
     """Close an application and report the outcome."""
     try:
         _close_application(app_name)
-        return CommandResult(
-            speech=f"Maalik, {app_name} Ko Band Kar deti hu !",
-            log=f"Application closed: {app_name}",
-        )
+        bot_speak(f"Maalik, {app_name} Ko Band Kar deti hu !")
     except Exception:
-        return CommandResult(
-            speech=f"Maalik, {app_name} naam ka koi software open nahi hai toh chinta mat kijiye",
-            log=f"Close skipped (not running?): {app_name}",
-            ok=False,
-        )
+        bot_speak(f"Maalik, {app_name} naam ka koi software open nahi hai toh chinta mat kijiye")
 
 
 def is_father_query(command):
@@ -118,19 +64,6 @@ def is_father_query(command):
 
 
 def take_screenshot():
-    """Grab the screen to a timestamped PNG and report the outcome."""
-    try:
-        image = pyscreenshot.grab()
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"screenshot_{timestamp}.png"
-        image.save(filename)
-        return CommandResult(
-            speech="Screenshot le liya Maalik!",
-            log=f"Screenshot saved: {filename}",
-        )
-    except Exception as error:
-        return CommandResult(
-            speech="Maalik, screenshot lene mein dikkat aa gayi!",
-            log=f"Screenshot failed: {error}",
-            ok=False,
-        )
+    image = pyscreenshot.grab()
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    image.save(f"screenshot_{timestamp}.png")
