@@ -4,9 +4,11 @@ Cross-platform notes:
 - Microphone capture goes through SpeechRecognition + PyAudio (PortAudio).
 - Recognition uses Google's free web API, so it needs an internet connection.
 - Text-to-speech uses gTTS (also online) and playsound3 for playback, which
-  picks a working audio backend on Windows, macOS and Linux.
+  picks a working audio backend on Windows (WinMM), macOS (afplay) and
+  Linux (GStreamer / ffmpeg).
 """
 
+import platform
 import re
 import tempfile
 from dataclasses import dataclass
@@ -23,6 +25,14 @@ from config import LANGUAGE
 LISTEN_TIMEOUT = 8
 PHRASE_TIME_LIMIT = 15
 
+_MIC_PERMISSION_HELP = {
+    "Darwin": "Open System Settings → Privacy & Security → Microphone and enable "
+              "access for your terminal (or the app you launched CatCodeDidi from).",
+    "Windows": "Open Settings → Privacy & security → Microphone and allow desktop "
+               "apps to use the microphone.",
+}.get(platform.system(),
+      "Check your system sound settings and that PulseAudio / PipeWire can see an input device.")
+
 
 @dataclass
 class RecognitionResult:
@@ -30,6 +40,7 @@ class RecognitionResult:
 
     text: str = ""
     error: str = ""
+    error_title: str = ""
 
     @property
     def ok(self):
@@ -82,15 +93,22 @@ def _has_microphone():
         return True
 
 
+def _looks_like_permission_error(error):
+    text = str(error).lower()
+    return any(s in text for s in ("permission", "denied", "-9986", "access", "not authorized"))
+
+
 def recognize_once():
     """Listen through the microphone once and return a RecognitionResult.
 
-    Unlike voice_input(), this never speaks on failure; the caller decides how
-    to surface the error. Every failure mode returns a friendly message instead
-    of raising.
+    Never speaks and never raises: every failure mode becomes a friendly
+    (title, message) pair the GUI can present.
     """
     if not _has_microphone():
-        return RecognitionResult(error="Koi microphone nahi mila. Ek mic connect kijiye.")
+        return RecognitionResult(
+            error_title="No microphone found",
+            error="CatCodeDidi couldn't find an input device. Connect a microphone and try again.",
+        )
 
     recognizer = sr.Recognizer()
     try:
@@ -100,18 +118,33 @@ def recognize_once():
                 source, timeout=LISTEN_TIMEOUT, phrase_time_limit=PHRASE_TIME_LIMIT
             )
     except sr.WaitTimeoutError:
-        return RecognitionResult(error="Kuch sunai nahi diya. Mic button dabaakar phir boliye.")
-    except OSError as error:
-        return RecognitionResult(error=f"Microphone use nahi ho pa raha: {error}")
-    except Exception as error:  # PortAudio / permission errors vary by platform
-        return RecognitionResult(error=f"Microphone error: {error}")
+        return RecognitionResult(
+            error_title="Didn't hear anything",
+            error="No speech was picked up. Tap the mic and speak clearly.",
+        )
+    except Exception as error:  # OSError / PortAudio / permission errors vary
+        if _looks_like_permission_error(error):
+            return RecognitionResult(
+                error_title="Microphone access needed",
+                error=f"CatCodeDidi can't use the microphone. {_MIC_PERMISSION_HELP}",
+            )
+        return RecognitionResult(
+            error_title="Microphone unavailable",
+            error=f"The microphone couldn't be opened. {_MIC_PERMISSION_HELP}",
+        )
 
     try:
         return RecognitionResult(text=recognizer.recognize_google(audio))
     except sr.UnknownValueError:
-        return RecognitionResult(error="Samajh nahi aaya, phir se boliye.")
-    except sr.RequestError as error:
-        return RecognitionResult(error=f"Speech service se connect nahi ho paya: {error}")
+        return RecognitionResult(
+            error_title="Didn't catch that",
+            error="CatCodeDidi couldn't make out the words. Try again in a quieter spot.",
+        )
+    except sr.RequestError:
+        return RecognitionResult(
+            error_title="Speech service unreachable",
+            error="Couldn't reach the speech-recognition service. Check your internet connection.",
+        )
 
 
 def voice_input():

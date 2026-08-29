@@ -1,7 +1,8 @@
-"""Command router: turn recognized text into a response + activity log.
+"""Command router: turn recognised text into a response + activity entries.
 
-This module owns no I/O beyond calling the existing handlers. It never
-speaks and never touches the GUI.
+`classify()` is a cheap, side-effect-free peek used by the GUI to show a
+"what am I doing" caption. `route()` actually performs the action.
+Neither speaks nor touches the GUI.
 """
 
 from dataclasses import dataclass, field
@@ -16,61 +17,77 @@ from data import exit_commands
 from gemini_ai import GeminiError, ask_gemini
 
 FATHER_ANSWER = "Mere Papa Anant Hai!"
+EXIT_REPLY = "Good Bye, Maalik!, Sulululu"
 
 
 @dataclass
 class RouteResult:
-    """Result of routing one utterance."""
-
     user_text: str
     response_text: str = ""
-    log_lines: list = field(default_factory=list)
+    activity: list = field(default_factory=list)   # list of (kind, text)
     is_exit: bool = False
 
 
-def route(said):
-    """Route recognized speech to the right handler and return a RouteResult."""
-    result = RouteResult(user_text=said)
+def classify(said):
+    """Return (kind, target) without doing anything. kind is one of:
+    open | close | screenshot | creator | exit | ai."""
     words = said.split()
     if not words:
-        return result
-
+        return "ai", None
     if is_father_query(said):
-        result.response_text = FATHER_ANSWER
-        result.log_lines.append("Creator query answered")
-        return result
-
+        return "creator", None
     if said.strip().lower() in exit_commands:
-        result.response_text = "Good Bye, Maalik!, Sulululu"
-        result.is_exit = True
-        result.log_lines.append("Exit command received")
-        return result
-
+        return "exit", None
     verb = words[0].lower()
     if len(words) > 1 and verb in ("open", "close"):
-        app_name = " ".join(words[1:])
-        handler = handle_open_command if verb == "open" else handle_close_command
-        command_result = handler(app_name)
-        result.response_text = command_result.speech
-        result.log_lines.append(command_result.log)
+        return verb, " ".join(words[1:])
+    if "screenshot" in (w.lower() for w in words):
+        return "screenshot", None
+    return "ai", None
+
+
+def route(said):
+    """Route recognised speech to the right handler and return a RouteResult."""
+    result = RouteResult(user_text=said)
+    kind, target = classify(said)
+
+    if kind == "creator":
+        result.response_text = FATHER_ANSWER
+        result.activity.append(("ok", "Answered a question about the creator"))
         return result
 
-    if "screenshot" in (w.lower() for w in words):
+    if kind == "exit":
+        result.response_text = EXIT_REPLY
+        result.is_exit = True
+        result.activity.append(("info", "Exit command received"))
+        return result
+
+    if kind in ("open", "close"):
+        handler = handle_open_command if kind == "open" else handle_close_command
+        command_result = handler(target)
+        result.response_text = command_result.speech
+        result.activity.append(
+            (kind if command_result.ok else "warn", command_result.log)
+        )
+        return result
+
+    if kind == "screenshot":
         command_result = take_screenshot()
         result.response_text = command_result.speech
-        result.log_lines.append(command_result.log)
+        result.activity.append(
+            ("shot" if command_result.ok else "warn", command_result.log)
+        )
         return result
 
-    # Anything else goes to Gemini.
-    result.log_lines.append("Sent request to Gemini")
+    # Everything else -> Gemini.
+    result.activity.append(("ai", "Asked Gemini"))
     try:
         result.response_text = ask_gemini(said)
-        result.log_lines.append("Gemini response received")
+        result.activity.append(("ai", "Gemini replied"))
     except GeminiError as error:
-        # error carries a short, safe, user-facing message (no secrets).
-        result.response_text = str(error)
-        result.log_lines.append(f"Gemini unavailable - {error}")
-    except Exception as error:  # never let an unexpected SDK error escape
+        result.response_text = str(error)          # short, safe, no secrets
+        result.activity.append(("warn", f"Gemini unavailable — {error}"))
+    except Exception as error:
         result.response_text = "Maalik, Gemini se abhi baat nahi ho pa rahi."
-        result.log_lines.append(f"Gemini error ({type(error).__name__})")
+        result.activity.append(("warn", f"Gemini error ({type(error).__name__})"))
     return result

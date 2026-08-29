@@ -1,15 +1,8 @@
 """Assistant orchestration: the 'brain' that runs one voice interaction.
 
-The GUI is a presentation layer on top of this. Every step reports progress
-through the `emit` callback passed to the constructor:
-
-    emit("state", "Listening...")
-    emit("transcript", "open google chrome")
-    emit("message", ("CatCodeDidi", "Thik hai Maalik!"))
-    emit("log", "Application opened: google chrome")
-    emit("exit", None)
-
-All methods here block; the caller is expected to run them off the UI thread.
+The GUI is a presentation layer on top of this. Progress is reported through
+the `emit` callback (see gui.py for the event vocabulary). All methods here
+block and are expected to run off the UI thread.
 """
 
 import gemini_ai
@@ -24,49 +17,69 @@ STATE_PROCESSING = "Processing..."
 STATE_SPEAKING = "Speaking..."
 STATE_ERROR = "Error"
 
+_STATUS_BY_KIND = {
+    "open": "Opening {target}…",
+    "close": "Closing {target}…",
+    "screenshot": "Taking a screenshot…",
+    "creator": "One moment…",
+    "exit": "Wrapping up…",
+    "ai": "Thinking…",
+}
+
 
 class Assistant:
     def __init__(self, emit):
         self._emit = emit
 
+    # -- helpers ---------------------------------------------------------
+
     def _speak(self, text):
+        """Speak text. The caller has already shown it in the GUI, so a TTS
+        failure is only logged - the response stays visible."""
         self._emit("state", STATE_SPEAKING)
+        self._emit("status", "Speaking…")
         try:
             speech.bot_speak(speech.clean_for_speech(text))
         except Exception as error:
-            self._emit("log", f"Speech playback failed: {error}")
+            self._emit("activity", ("warn", f"Voice playback failed ({type(error).__name__})"))
+
+    # -- entry points --------------------------------------------------
 
     def startup_greeting(self):
-        """Greet the user once when the app launches."""
+        """Greet once at launch and warm up the Gemini SDK off the UI thread."""
         if gemini_ai.is_configured():
-            self._emit("log", f"Gemini ready (model: {gemini_ai.model_name()})")
-            gemini_ai.prewarm()  # load the SDK now, off the UI thread
+            self._emit("activity", ("ai", f"Gemini ready · {gemini_ai.model_name()}"))
+            gemini_ai.prewarm()
         else:
-            self._emit("log", "Gemini API key not set - AI answers off, local "
-                              "commands still work. Add GEMINI_API_KEY to .env")
+            self._emit("activity", ("info", "No Gemini key · local commands only"))
         text = greeting()
         self._emit("message", (BOT_NAME, text))
         self._speak(text)
         self._emit("state", STATE_READY)
 
     def run_interaction(self):
-        """Run a full listen -> route -> respond -> speak cycle."""
+        """Run one listen -> understand -> act -> respond -> speak cycle."""
         self._emit("state", STATE_LISTENING)
+        self._emit("status", "Listening…")
         heard = speech.recognize_once()
 
         if not heard.ok:
             self._emit("state", STATE_ERROR)
-            self._emit("log", f"Speech recognition failed - {heard.error}")
-            self._emit("message", (BOT_NAME, heard.error or "Kuch samajh nahi aaya."))
+            self._emit("activity", ("warn", "Speech not recognised"))
+            self._emit("error", (heard.error_title or "Didn't catch that",
+                                 heard.error or "Please try again."))
             self._emit("state", STATE_READY)
             return
 
         self._emit("transcript", heard.text)
         self._emit("state", STATE_PROCESSING)
 
+        kind, target = router.classify(heard.text)
+        self._emit("status", _STATUS_BY_KIND.get(kind, "Working…").format(target=target or ""))
+
         result = router.route(heard.text)
-        for line in result.log_lines:
-            self._emit("log", line)
+        for kind_text in result.activity:
+            self._emit("activity", kind_text)
 
         if result.response_text:
             self._emit("message", (BOT_NAME, result.response_text))

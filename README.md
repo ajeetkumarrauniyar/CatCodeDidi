@@ -1,28 +1,24 @@
 # CatCodeDidi
 
-CatCodeDidi is a beginner-friendly, Hindi-speaking **desktop voice assistant**.
-Press a microphone button, speak a command, and watch her state, the recognized
-command, her reply, and the actions she takes — all in one window.
-
-The project grows in small, understandable phases. This is the polished
-cross-platform GUI phase.
+CatCodeDidi is a friendly, Hindi-speaking **desktop voice assistant** with a
+polished dark interface. Tap the mic (or press <kbd>Space</kbd>), speak a
+command, and watch her state, your words, her reply, and the actions she takes.
 
 ---
 
 ## Features
 
-- 🎤 **Voice control** — click the mic (or press <kbd>Space</kbd>), speak one command.
+- 🎤 **Voice control** — an animated mic core with clear Ready / Listening /
+  Working / Speaking / Error states.
 - 🗣️ **Hindi text-to-speech** — replies are spoken aloud (gTTS).
-- 🖥️ **Open / close desktop apps** by voice (`open Google Chrome`, `close Google Chrome`).
-- 📸 **Screenshots** — saved to a `screenshots/` folder and reported in the log.
-- 🤖 **Gemini answers** for anything that isn't a built-in command, via the
-  official `google-genai` SDK and a fast Flash-Lite model.
-- 🙋 **Creator query** — "who is your father".
-- 👋 **Exit by voice** — `shutdown`, `bye`, `good night`, …
-- 🧵 **Responsive UI** — recognition, Gemini and audio run on a background
-  thread, so the window never freezes.
-- ⚠️ **Graceful errors** — a missing app, no microphone, or an AI failure shows
-  a message in the GUI instead of crashing.
+- 🖥️ **Open / close desktop apps** by voice, per-OS (`open Google Chrome`).
+- 📸 **Screenshots** — saved to `screenshots/`; permission problems are explained.
+- 🤖 **Gemini answers** via the official `google-genai` SDK and a fast Flash-Lite
+  model — shown in the conversation and spoken.
+- 🙋 **Creator query** · 👋 **Exit by voice** (`shutdown`, `bye`, `good night`).
+- 🧵 **Never freezes** — recognition, Gemini and audio run on a background thread.
+- ⚠️ **Graceful errors** — a friendly card (what happened / what to do), never a
+  traceback.
 
 ---
 
@@ -30,20 +26,48 @@ cross-platform GUI phase.
 
 | Thing | Version / note |
 |---|---|
-| Python | 3.10 or newer |
-| OS | Windows 10/11, macOS 12+, or a Linux desktop |
+| **Python** | **3.10 or newer, linked against Tcl/Tk 8.6+** (see [Python runtime](#python-runtime) — this matters on macOS) |
+| OS | Windows 10/11, macOS 12–26, or a Linux desktop |
 | Internet | required — speech recognition and Gemini are online services |
-| Microphone | any working input device |
-| Gemini API key | only needed for AI answers (see [Gemini configuration](#gemini-configuration)) |
+| Microphone | any working input device (permission prompt on first use) |
+| Gemini API key | only for AI answers — see [Gemini configuration](#gemini-configuration) |
 
 **System-level dependencies** (a `pip install` alone is *not* enough):
 
 | Package | Needs | Windows | macOS | Linux |
 |---|---|---|---|---|
+| Python + Tk | **Tcl/Tk ≥ 8.6** | python.org installer ✓ | python.org installer ✓ · Homebrew needs `python-tk` | `python3-tk` / `python3-tkinter` / `tk` |
 | `PyAudio` | PortAudio | bundled in the pip wheel | `brew install portaudio` | `portaudio19-dev` (Debian) / `portaudio-devel` (Fedora) |
-| `tkinter` | Tk | bundled with python.org installer | bundled with python.org installer; Homebrew needs `brew install python-tk` | `python3-tk` / `python3-tkinter` / `tk` |
-| `playsound3` | an audio backend | bundled (WinMM) | bundled (`afplay`) | GStreamer or `ffmpeg` (usually already present) |
-| `pyscreenshot` | a screenshot backend | bundled | bundled | X11: works out of the box; Wayland may need `gnome-screenshot` or `grim` |
+| `playsound3` | an audio backend | bundled (WinMM) | bundled (`afplay`) | GStreamer or `ffmpeg` |
+| `pyscreenshot` | a screenshot backend | bundled | Screen Recording permission | X11 ✓ · Wayland needs `gnome-screenshot` / `grim` |
+
+`customtkinter` (the GUI toolkit) is a pure-Python pip install — no system parts.
+
+---
+
+## Python runtime
+
+CatCodeDidi builds its window with Tk. **The Apple "Command Line Tools" Python
+(3.9, at `/usr/bin/python3`) ships the obsolete Tcl/Tk 8.5, which aborts the
+process on modern macOS** (`Tcl_Panic` in `TkpInit` → SIGABRT). CatCodeDidi
+runs a preflight check and prints a clear message instead of crashing, but you
+still need a good Python.
+
+**Use one of these** (both bundle Tk 8.6+):
+
+- the installer from **python.org** (3.10+), or
+- **Homebrew**: `brew install python@3.13 python-tk@3.13`
+
+**Verify before you build the venv** — all three lines must look right:
+
+```bash
+which python3.13        # NOT /usr/bin/python3 and NOT .../CommandLineTools/...
+python3.13 --version    # 3.10 or newer
+python3.13 -c "import tkinter; print(tkinter.TkVersion)"   # 8.6, 9.0, ... (never 8.5)
+```
+
+Then always create the virtual environment with that interpreter (below), and
+run CatCodeDidi from inside the activated venv.
 
 ---
 
@@ -51,23 +75,21 @@ cross-platform GUI phase.
 
 The flow is the same everywhere:
 
-1. Install Python 3.10+
-2. Download / clone this project
-3. Open a terminal in the project folder
-4. Install the system dependency for your OS (table above)
-5. Create and activate a virtual environment
-6. `pip install -r requirements.txt`
-7. `cp .env.example .env` and add your Gemini key (optional, for AI answers)
-8. `python main.py`
+1. Install a good Python (see [Python runtime](#python-runtime))
+2. Download / clone this project, open a terminal in the folder
+3. Install the system dependencies for your OS (table above)
+4. Create and activate a virtual environment **with that Python**
+5. `pip install -r requirements.txt`
+6. `cp .env.example .env` and add your Gemini key (optional, for AI answers)
+7. `python main.py`
 
 ### Windows (PowerShell)
 
 ```powershell
-# 1. System deps: nothing extra — the python.org installer includes Tkinter,
-#    and the PyAudio wheel includes PortAudio.
+# 1. Python: install 3.10+ from python.org (includes Tk 8.6+ and the PyAudio wheel bundles PortAudio).
 
 # 2. Virtual environment
-python -m venv .venv
+py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 # If activation is blocked:  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
@@ -86,13 +108,14 @@ python main.py
 ### macOS (Terminal)
 
 ```bash
-# 1. System deps
-brew install portaudio          # for PyAudio
-brew install python-tk          # only if you use Homebrew's Python
+# 1. Python + system deps  (Homebrew shown; or use the python.org installer)
+brew install python@3.13 python-tk@3.13 portaudio
 
-# 2. Virtual environment
-python3 -m venv .venv
+# 2. Virtual environment — MUST be built with the Homebrew/python.org Python,
+#    never /usr/bin/python3 (that one crashes, see "Python runtime" above)
+/opt/homebrew/bin/python3.13 -m venv .venv
 source .venv/bin/activate
+python -c "import tkinter; print('Tk', tkinter.TkVersion)"   # expect 8.6 / 9.0
 
 # 3. Dependencies
 python -m pip install --upgrade pip
@@ -105,6 +128,10 @@ nano .env               # paste your key into GEMINI_API_KEY
 # 5. Run
 python main.py
 ```
+
+> On Apple Silicon these are all native arm64 packages — nothing extra to do.
+> The first run pops the macOS **Microphone** prompt; a screenshot command
+> may also ask for **Screen Recording** (System Settings → Privacy & Security).
 
 ### Linux (Terminal)
 
@@ -193,15 +220,17 @@ thinking setting, CatCodeDidi automatically retries the request without it.
 python main.py
 ```
 
-The CatCodeDidi window opens and greets you. Click **🎤 Speak** (or press
-<kbd>Space</kbd> / <kbd>Enter</kbd>) and say one command. The status pill shows
-where she is in the cycle:
+The window opens and greets you. Tap the **mic core** (or press <kbd>Space</kbd>
+/ <kbd>Enter</kbd>) and say one command. The status pill and the mic animation
+show where she is:
 
 ```
-Ready → Listening → Processing → Speaking → Ready
+Ready → Listening → Working → Speaking → Ready
 ```
 
-The button is disabled while she is busy, so only one interaction runs at a time.
+The mic is disabled while she's busy, so only one interaction runs at a time.
+Every reply appears in the conversation the moment it's ready — before it is
+spoken — so a slow or failed voice playback never hides the answer.
 
 ---
 
@@ -218,52 +247,70 @@ The button is disabled while she is busy, so only one interaction runs at a time
 
 ---
 
+## macOS permissions
+
+CatCodeDidi asks for permission only when a feature needs it:
+
+| Permission | When | If denied |
+|---|---|---|
+| **Microphone** | first voice command | error card: "Microphone access needed" → System Settings › Privacy & Security › Microphone → enable your terminal |
+| **Screen Recording** | `take a screenshot` | error card explaining the same path for Screen Recording |
+
+Grant them to the app you launch CatCodeDidi *from* (Terminal, iTerm, VS Code…).
+No Accessibility/Automation permission is required — app launch uses `open`.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| `ModuleNotFoundError: No module named '_tkinter'` | Install Tk: Homebrew → `brew install python-tk`; Debian → `sudo apt install python3-tk`; Fedora → `sudo dnf install python3-tkinter`. |
-| `pip install pyaudio` fails to build | Install PortAudio first (see the table above), then reinstall. On Apple Silicon: `export CFLAGS="-I$(brew --prefix portaudio)/include" LDFLAGS="-L$(brew --prefix portaudio)/lib"`. |
-| Status goes to **Error**, "Koi microphone nahi mila" | No input device detected — connect a microphone. |
-| "Microphone use nahi ho pa raha" / permission error | Grant microphone permission (Windows: Settings → Privacy → Microphone; macOS: System Settings → Privacy & Security → Microphone; Linux: check PulseAudio/PipeWire). |
-| "Samajh nahi aaya" every time | Background noise or an online outage — speak clearly and check your connection. |
-| Speech recognition never returns | It now times out after ~8 s of silence and returns to **Ready**. |
-| `take a screenshot` fails on Linux | Install `gnome-screenshot` or `grim` (Wayland). |
-| "Gemini API key not configured" | No `GEMINI_API_KEY` in `.env`. Copy `.env.example` to `.env` and add your key. Local commands still work without it. |
-| "Gemini API key galat ya invalid" | The key is wrong, revoked, or has no Gemini access — regenerate it at <https://aistudio.google.com/apikey>. |
-| "Model '…' available nahi hai" | `GEMINI_MODEL` is misspelled or retired. Remove the line to use the default, or set a current model (see [Which model](#which-model-and-why)). |
-| "Gemini abhi busy hai (rate limit)" | Free-tier quota hit — wait a minute and try again. |
-| No sound on Linux | Ensure GStreamer or `ffmpeg` is installed for `playsound3`. |
+| **App aborts / "Abort trap: 6" / `Tcl_Panic` in `TkpInit`** | You're on the Apple CLT Python 3.9 (Tk 8.5). Install python.org or Homebrew Python + `python-tk`, rebuild the venv. See [Python runtime](#python-runtime). |
+| **"Unsupported Python runtime" / "Outdated Tcl/Tk"** on launch | Same cause — the preflight caught it. Follow the message. |
+| `ModuleNotFoundError: No module named '_tkinter'` | Install Tk: `brew install python-tk@3.13` / `sudo apt install python3-tk` / `sudo dnf install python3-tkinter`. |
+| `ModuleNotFoundError: customtkinter` | `pip install -r requirements.txt` inside the activated venv. |
+| `pip install pyaudio` fails to build | Install PortAudio first, then reinstall. Apple Silicon: `export CFLAGS="-I$(brew --prefix portaudio)/include" LDFLAGS="-L$(brew --prefix portaudio)/lib"`. |
+| Error card: **"No microphone found"** | Connect an input device. |
+| Error card: **"Microphone access needed"** | Grant Microphone permission (see [macOS permissions](#macos-permissions); Windows: Settings › Privacy › Microphone; Linux: check PulseAudio/PipeWire). |
+| Error card: **"Didn't catch that"** every time | Background noise or an outage — speak clearly, check your connection. |
+| Nothing happens after ~8 s of speaking | It times out on silence and returns to **Ready** — tap again. |
+| Screenshot card: **"permission chahiye"** (macOS) / fails (Linux) | Enable Screen Recording (macOS) or install `gnome-screenshot` / `grim` (Wayland). |
+| "Gemini API key not configured" | Add `GEMINI_API_KEY` to `.env` (copy from `.env.example`). Local commands work without it. |
+| "Gemini API key galat ya invalid" | Regenerate the key at <https://aistudio.google.com/apikey>. |
+| "Model '…' available nahi hai" | Fix or remove `GEMINI_MODEL` (see [Which model](#which-model-and-why)). |
+| "Gemini abhi busy hai (rate limit)" | Free-tier quota — wait a minute. |
+| No TTS sound on Linux | Install GStreamer or `ffmpeg` for `playsound3`. |
 
 ---
 
 ## Project structure
 
 ```
-main.py         entry point — launches the GUI
-gui.py          Tkinter window (presentation only) + background-thread plumbing
-assistant.py    Assistant class — runs one listen → route → respond → speak cycle
-router.py       maps recognized text to a response + activity-log lines
-commands.py     cross-platform open/close app, screenshot, creator-query check
-speech.py       microphone capture, Google recognition, Hindi TTS, playback
+main.py         entry point — preflight runtime check, then launches the GUI
+theme.py        design tokens: colours, spacing, radius, typography  (single source)
+widgets.py      custom widgets: animated MicOrb, MessageCard, ActivityRow
+gui.py          CustomTkinter window (presentation only) + queue/thread plumbing
+assistant.py    Assistant — runs one listen → understand → act → respond → speak cycle
+router.py       classify() (cheap peek) + route() (executes); returns response + activity
+commands.py     per-OS open/close app, screenshot (permission-aware), creator check
+speech.py       mic capture, Google recognition, Hindi TTS, playback — friendly errors
 personality.py  time-based greeting text
-gemini_ai.py    Gemini via the google-genai SDK; one reused client, stateless
-                requests, low thinking level; raises GeminiError with safe messages
+gemini_ai.py    google-genai SDK: one reused client, stateless requests, low thinking
 config.py       BOT_NAME, LANGUAGE
 data.py         static command / creator-query data
 utils.py        reserved for later phases
 ```
 
-Data flow:
+Data flow (GUI ↔ core are fully separate — the GUI holds no assistant logic,
+`assistant.py` / services hold no GUI code):
 
 ```
-main → gui → assistant → router ─┬─ commands
-      (Tk,   (orchestr.)         ├─ gemini_ai
-       threads)                  ├─ personality
-                                 └─ data
+main → gui ──queue──► assistant ──► router ─┬─ commands   (open/close/screenshot)
+     (CustomTk,      (orchestration)         ├─ gemini_ai  (AI)
+      threads)                               ├─ personality
+                                             └─ data
+       speech.py  ◄── mic / recognition / TTS
 ```
-
-The GUI holds no assistant logic; `assistant.py` holds no GUI code.
 
 ---
 
@@ -271,26 +318,28 @@ The GUI holds no assistant logic; `assistant.py` holds no GUI code.
 
 | Area | Windows | macOS | Linux |
 |---|---|---|---|
-| Open app | `AppOpener` (Start-menu fuzzy match) | `open -a`, with a fallback scan of `/Applications` for a close name (`Chrome` → `Google Chrome`) | look up an executable on `PATH` and launch it detached |
+| GUI | CustomTkinter on Tk 8.6+ — HiDPI scaling is automatic on all three |
+| Open app | `AppOpener` (Start-menu fuzzy match) | `open -a` + a fallback scan of `/Applications` (`Chrome` → `Google Chrome`) | executable on `PATH`, launched detached |
 | Close app | `AppOpener` | `osascript … quit app` | `pkill -i` |
-| Screenshot | `pyscreenshot` | `pyscreenshot` | `pyscreenshot` (X11 native; Wayland needs a helper) |
+| Screenshot | `pyscreenshot` | `pyscreenshot` (+ black-frame check for denied Screen Recording) | `pyscreenshot` (X11 native; Wayland needs a helper) |
 | TTS playback | WinMM | `afplay` | GStreamer / `ffmpeg` via `playsound3` |
-| Temp audio file | `tempfile` (created, closed, then written — Windows-safe) | same | same |
-| Gemini API | identical everywhere — `google-genai` over HTTPS, no OS-specific code; `.env` via `python-dotenv` |
+| Temp audio file | `tempfile` via `pathlib` — created, closed, then written (Windows-safe) | same | same |
+| Gemini API | identical everywhere — `google-genai` over HTTPS, no OS-specific code |
 
-**Tested on:** macOS 15 (Apple Silicon), Python 3.13, Tk 9.0 — full interaction
-cycle, all commands, resize, error paths, and **live Gemini** calls with a real
-key (`gemini-3.5-flash-lite`, and error paths for invalid key / bad model).
-**Not physically tested:** Windows and Linux. Those code paths are exercised by
-`platform.system()` branches and were reviewed statically; verify with the
-commands above. Application *names* differ across OSes — use the name as it
-appears on your system.
+**Actually tested:** macOS 26 (Apple Silicon), Homebrew Python 3.13, Tk 9.0 —
+full interaction cycle, every command, live Gemini (`gemini-3.5-flash-lite`),
+error cards (mic permission, invalid key, bad model), window resize, keyboard
+trigger, clean shutdown, and the preflight guard firing on a simulated old Tk.
+**Reviewed but not run:** Windows and Linux — same code paths behind
+`platform.system()` branches; verify with the commands in this README.
+Application *names* differ per OS — say the name as it appears on your system.
 
 ---
 
 ## Roadmap
 
 1. **Phase 1 — Refactor & make robust.** ✅
-2. **Phase 2 — Desktop GUI, cross-platform polish, modern Gemini SDK.** ✅ *(this phase)*
+2. **Phase 2 — Desktop GUI, cross-platform reliability, modern Gemini SDK,
+   premium redesign.** ✅ *(this phase)*
 3. **Phase 3 — AI:** richer conversation, tool use / function calling.
 4. **Phase 4 — Search + AI:** retrieval, summarisation, scoped automation.

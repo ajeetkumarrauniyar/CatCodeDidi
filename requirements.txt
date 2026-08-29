@@ -1,6 +1,8 @@
-# CatCodeDidi Python dependencies.
-# The GUI uses Tkinter, which ships with the Python standard library
-# (on Linux it may be a separate OS package - see README).
+# CatCodeDidi Python dependencies.  Requires Python 3.10+ with Tcl/Tk 8.6+
+# (see README - the Apple Command Line Tools Python 3.9 / Tk 8.5 crashes).
+
+# GUI
+customtkinter            # modern widget layer on top of Tkinter (pulls darkdetect)
 
 # Speech input
 SpeechRecognition        # microphone capture + Google Web Speech API

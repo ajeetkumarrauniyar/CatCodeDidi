@@ -141,20 +141,37 @@ def is_father_query(command):
     return command.strip().casefold() in FATHER_RELATED_QUESTIONS
 
 
+def _screen_recording_hint():
+    if _SYSTEM == "Darwin":
+        return ("Screenshot needs Screen Recording permission. Open System Settings "
+                "→ Privacy & Security → Screen Recording and enable your terminal.")
+    if _SYSTEM == "Linux":
+        return ("Screenshot failed. On Wayland, install 'gnome-screenshot' or 'grim'.")
+    return "Screenshot could not be captured."
+
+
 def take_screenshot():
     """Grab the screen to a timestamped PNG and report where it was saved."""
     try:
         SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         path = SCREENSHOT_DIR / f"screenshot_{timestamp}.png"
-        pyscreenshot.grab().save(str(path))
+        image = pyscreenshot.grab()
+        # macOS returns a fully black image when Screen Recording is denied.
+        if image.getbbox() is None or image.convert("L").getextrema() == (0, 0):
+            return CommandResult(
+                speech="Maalik, screenshot ke liye permission chahiye!",
+                log=_screen_recording_hint(),
+                ok=False,
+            )
+        image.save(str(path))
         return CommandResult(
             speech="Screenshot le liya Maalik!",
-            log=f"Screenshot captured -> {path}",
+            log=f"Screenshot saved to {path}",
         )
     except Exception as error:
         return CommandResult(
             speech="Maalik, screenshot lene mein dikkat aa gayi!",
-            log=f"Screenshot failed ({error})",
+            log=f"Screenshot failed - {_screen_recording_hint()} ({type(error).__name__})",
             ok=False,
         )
